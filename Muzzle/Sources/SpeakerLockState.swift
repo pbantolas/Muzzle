@@ -198,20 +198,18 @@ final class SpeakerLockState {
         lastProtectionReason = nil
         lastAudioActionMessage = "Protection paused temporarily"
         appendProtectionEvent("protection pause set for \(Int(duration))s")
-        logger.info("Protection pause set for \(duration) seconds")
     }
 
     func resumeProtectionNow() {
         protectionPauseUntil = nil
         lastAudioActionMessage = "Protection resumed"
         appendProtectionEvent("manual protection pause cleared")
-        logger.info("Manual protection pause cleared; protection resumed")
     }
 
     func handleRoamingRisk(reason: ProtectionReason) {
         guard reason.isRoamingRisk else {
             appendProtectionEvent("ignored non-roaming reason: \(reason.rawValue)")
-            logger.error("Ignoring non-roaming protection reason: \(reason.rawValue, privacy: .public)")
+            logger.error("Ignoring non-roaming protection reason: \(reason.rawValue)")
             return
         }
 
@@ -221,30 +219,25 @@ final class SpeakerLockState {
         guard roamingProtectionEnabled else {
             lastAudioActionMessage = "Roaming protection is off"
             appendProtectionEvent("roaming check skipped: disabled")
-            logger.info("Roaming Protection skipped because it is disabled. reason=\(reason.rawValue, privacy: .public)")
             return
         }
 
         guard !isProtectionPauseActive else {
             lastAudioActionMessage = "Protection paused during roaming check"
             appendProtectionEvent("roaming check skipped: protection pause active until \(protectionPauseUntil?.description ?? "nil")")
-            logger.info("Roaming Protection skipped because protection pause is active. reason=\(reason.rawValue, privacy: .public)")
             return
         }
 
         guard let currentOutput else {
             lastAudioActionMessage = "Roaming check could not detect current output"
             appendProtectionEvent("roaming check skipped: no current output")
-            logger.error("Roaming Protection could not detect current output. reason=\(reason.rawValue, privacy: .public)")
+            logger.error("Roaming Protection could not detect current output. reason=\(reason.rawValue)")
             return
         }
 
         guard currentOutput.isBuiltInSpeaker else {
             lastAudioActionMessage = "Roaming check passed; \(currentOutput.name) allowed"
             appendProtectionEvent("roaming check passed: \(currentOutput.name) is not built-in speakers")
-            logger.info(
-                "Roaming Protection skipped because current output is not built-in speakers. reason=\(reason.rawValue, privacy: .public), output=\(currentOutput.name, privacy: .public)"
-            )
             return
         }
 
@@ -284,9 +277,6 @@ final class SpeakerLockState {
 
         lastAudioActionMessage = "Output changed to \(output.name)"
         appendProtectionEvent("default output changed: \(previousOutput?.name ?? "nil") -> \(output.name), builtInSpeaker=\(output.isBuiltInSpeaker)")
-        logger.info(
-            "Default output changed from \(previousOutput?.name ?? "none", privacy: .public) to \(output.name, privacy: .public). builtInSpeaker=\(output.isBuiltInSpeaker)"
-        )
 
         guard shouldBlockAfterOutputChange(from: previousOutput, to: output) else {
             appendProtectionEvent("always protection did not block output change")
@@ -299,13 +289,11 @@ final class SpeakerLockState {
 
     private func handleNetworkEnvironmentChanged(_ change: NetworkEnvironmentChange) {
         appendProtectionEvent("network environment trigger received: \(change.trigger.debugDisplayName)")
-        logger.info("Network environment trigger: \(String(describing: change.trigger), privacy: .public)")
         handleRoamingRisk(reason: .networkChanged)
     }
 
     private func handleWake() {
         appendProtectionEvent("wake trigger received")
-        logger.info("Wake trigger received")
         handleRoamingRisk(reason: .wake)
     }
 
@@ -318,7 +306,6 @@ final class SpeakerLockState {
         guard !isProtectionPauseActive else {
             lastAudioActionMessage = "Protection paused after output change"
             appendProtectionEvent("always protection skipped: protection pause active")
-            logger.info("Always Protection skipped because protection pause is active")
             return false
         }
 
@@ -387,7 +374,6 @@ final class SpeakerLockState {
         protectionPauseUntil = nil
         lastAudioActionMessage = "Protection pause expired"
         appendProtectionEvent("protection pause expired")
-        logger.info("Protection pause expired; protection resumed")
 
         guard alwaysProtectionEnabled || roamingProtectionEnabled else {
             appendProtectionEvent("expiry recheck skipped: protections disabled")
@@ -412,20 +398,18 @@ final class SpeakerLockState {
         if audioOutputController.setMuted(true, for: output) {
             lastAudioActionMessage = "Muted \(output.name)"
             appendProtectionEvent("block succeeded by mute: \(output.name)")
-            logger.info("Blocked speakers by mute. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
             return
         }
 
         if audioOutputController.setVolume(0, for: output) {
             lastAudioActionMessage = "Set \(output.name) volume to 0"
             appendProtectionEvent("block succeeded by volume 0: \(output.name)")
-            logger.info("Blocked speakers by setting volume to 0. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
             return
         }
 
         lastAudioActionMessage = "Could not block \(output.name)"
         appendProtectionEvent("block failed: \(output.name)")
-        logger.error("Failed to block speakers. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
+        logger.error("Failed to block speakers. reason=\(reason.rawValue), output=\(output.name)")
     }
 
     private func diagnosticsReport() -> String {

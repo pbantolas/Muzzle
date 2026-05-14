@@ -1,9 +1,7 @@
 import AppKit
 import Foundation
-import OSLog
 
 final class SystemWakeObserver {
-    private let logger = Logger(subsystem: "Muzzle", category: "SystemWake")
     private var wakeObserver: NSObjectProtocol?
 
     var onWake: (@MainActor () -> Void)?
@@ -24,8 +22,6 @@ final class SystemWakeObserver {
         ) { [weak self] _ in
             self?.handleWake()
         }
-
-        logger.info("Started observing wake notifications")
     }
 
     func stopObserving() {
@@ -35,12 +31,9 @@ final class SystemWakeObserver {
 
         NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
         self.wakeObserver = nil
-        logger.info("Stopped observing wake notifications")
     }
 
     private func handleWake() {
-        logger.info("System wake detected")
-
         Task { @MainActor in
             onWake?()
         }

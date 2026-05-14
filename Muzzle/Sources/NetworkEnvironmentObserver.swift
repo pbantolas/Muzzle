@@ -241,7 +241,6 @@ final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
         startMonitoringWiFiEvents()
         isObserving = true
         appendDiagnosticEvent("started observing network path and Wi-Fi identity changes")
-        logger.info("Started observing network path and Wi-Fi identity changes")
     }
 
     private func stopObservingOnQueue() {
@@ -257,7 +256,6 @@ final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
         monitor.pathUpdateHandler = nil
         isObserving = false
         appendDiagnosticEvent("stopped observing network path and Wi-Fi identity changes")
-        logger.info("Stopped observing network path and Wi-Fi identity changes")
     }
 
     private func handlePathUpdate(_ path: NWPath) {
@@ -317,7 +315,6 @@ final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
             lastSnapshot = currentSnapshot
             appendDiagnosticEvent("captured initial snapshot after \(reason): \(currentSnapshot.debugSummary)")
             notifyDebugStateChanged()
-            logger.info("Captured initial network environment snapshot")
             return
         }
 
@@ -327,14 +324,12 @@ final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
 
         guard let trigger = trigger(from: previousSnapshot, to: currentSnapshot) else {
             appendDiagnosticEvent("no roaming trigger")
-            logger.info("Network path changed without a roaming trigger")
             return
         }
 
         lastTrigger = trigger
         appendDiagnosticEvent("roaming trigger: \(trigger.debugDisplayName)")
         notifyDebugStateChanged()
-        logger.info("Network environment changed. trigger=\(String(describing: trigger), privacy: .public)")
 
         let change = NetworkEnvironmentChange(
             previous: previousSnapshot,
@@ -439,7 +434,7 @@ final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
             } catch {
                 appendDiagnosticEvent("failed CoreWLAN \(event.debugDisplayName) monitoring: \(error.localizedDescription)")
                 logger.error(
-                    "Failed to start CoreWLAN \(event.debugDisplayName, privacy: .public) monitoring: \(error.localizedDescription, privacy: .public)"
+                    "Failed to start CoreWLAN \(event.debugDisplayName, privacy: .public) monitoring: \(error.localizedDescription)"
                 )
             }
         }
@@ -451,7 +446,7 @@ final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
                 try wifiClient.stopMonitoringEvent(with: event)
             } catch {
                 logger.error(
-                    "Failed to stop CoreWLAN \(event.debugDisplayName, privacy: .public) monitoring: \(error.localizedDescription, privacy: .public)"
+                    "Failed to stop CoreWLAN \(event.debugDisplayName, privacy: .public) monitoring: \(error.localizedDescription)"
                 )
             }
         }

@@ -1,9 +1,7 @@
 import CoreLocation
 import Foundation
-import OSLog
 
 final class LocationAuthorizationController: NSObject, CLLocationManagerDelegate {
-    private let logger = Logger(subsystem: "Muzzle", category: "LocationAuthorization")
     private let manager = CLLocationManager()
 
     var onAuthorizationChanged: (@MainActor (CLAuthorizationStatus) -> Void)?
@@ -21,14 +19,11 @@ final class LocationAuthorizationController: NSObject, CLLocationManagerDelegate
         guard manager.authorizationStatus == .notDetermined else {
             return
         }
-
-        logger.info("Requesting Location authorization for Wi-Fi SSID access")
         manager.requestWhenInUseAuthorization()
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
-        logger.info("Location authorization changed: \(status.debugDisplayName, privacy: .public)")
 
         Task { @MainActor in
             onAuthorizationChanged?(status)

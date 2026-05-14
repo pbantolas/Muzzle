@@ -89,16 +89,12 @@ final class AudioOutputController {
             outputTerminalTypes: outputTerminalTypes(for: deviceID)
         )
 
-        logger.info(
-            "Default output: id=\(device.id), name=\(device.name, privacy: .public), uid=\(device.uid, privacy: .public), transport=\(device.transportType.map(fourCharacterCode) ?? "unknown", privacy: .public), dataSourceID=\(device.dataSourceID.map(fourCharacterCode) ?? "unknown", privacy: .public), terminals=\(device.outputTerminalTypes.map(fourCharacterCode).joined(separator: ","), privacy: .public), builtInSpeaker=\(device.isBuiltInSpeaker), reason=\(device.builtInSpeakerDetectionReason, privacy: .public)"
-        )
-
         return device
     }
 
     func setMuted(_ isMuted: Bool, for device: AudioOutputDevice) -> Bool {
         guard hasMuteControl(for: device.id) else {
-            logger.error("Output device does not expose a mute control: \(device.name, privacy: .public)")
+            logger.error("Output device does not expose a mute control: \(device.name)")
             return false
         }
 
@@ -119,11 +115,10 @@ final class AudioOutputController {
         )
 
         guard status == noErr else {
-            logger.error("Failed to set mute=\(isMuted) for \(device.name, privacy: .public). status=\(status)")
+            logger.error("Failed to set mute=\(isMuted) for \(device.name). status=\(status)")
             return false
         }
 
-        logger.info("Set mute=\(isMuted) for \(device.name, privacy: .public)")
         return true
     }
 
@@ -131,7 +126,6 @@ final class AudioOutputController {
         let clampedVolume = min(max(volume, 0), 1)
 
         if setVolume(clampedVolume, for: device.id, element: kAudioObjectPropertyElementMain) {
-            logger.info("Set main output volume=\(clampedVolume) for \(device.name, privacy: .public)")
             return true
         }
 
@@ -140,11 +134,10 @@ final class AudioOutputController {
         }
 
         if didSetChannelVolume {
-            logger.info("Set channel output volume=\(clampedVolume) for \(device.name, privacy: .public)")
             return true
         }
 
-        logger.error("Output device does not expose a writable volume control: \(device.name, privacy: .public)")
+        logger.error("Output device does not expose a writable volume control: \(device.name)")
         return false
     }
 
@@ -172,7 +165,6 @@ final class AudioOutputController {
         }
 
         isObservingDefaultOutput = true
-        logger.info("Started observing default output changes")
     }
 
     private func stopObservingDefaultOutput() {
