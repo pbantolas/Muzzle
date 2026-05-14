@@ -155,23 +155,15 @@ final class SpeakerLockState {
     }
 
     var menuBarBadgeSystemImage: String? {
+        guard alwaysProtectionEnabled || roamingProtectionEnabled else {
+            return nil
+        }
+
         if isProtectionPauseActive {
             return "clock.fill"
         }
 
-        if alwaysProtectionEnabled && roamingProtectionEnabled {
-            return "shield.fill"
-        }
-
-        if alwaysProtectionEnabled {
-            return "headphones"
-        }
-
-        if roamingProtectionEnabled {
-            return "location.fill"
-        }
-
-        return "slash.circle.fill"
+        return "checkmark.shield.fill"
     }
 
     private var protectionModeTitle: String? {
