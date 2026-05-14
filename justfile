@@ -1,7 +1,7 @@
-# ─── DontBlastMySound ─────────────────────────────────────────────────────────
+# ─── Muzzle ───────────────────────────────────────────────────────────────────
 
 tuist := "tuist"
-scheme := "DontBlastMySound"
+scheme := "Muzzle"
 
 default: generate
 

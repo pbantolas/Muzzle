@@ -6,11 +6,11 @@
 
    ```sh
    tuist generate
-   tuist xcodebuild build -scheme DontBlastMySound
-   open DontBlastMySound.xcworkspace
+   tuist xcodebuild build -scheme Muzzle
+   open Muzzle.xcworkspace
    ```
 
-2. Run the `DontBlastMySound` scheme from Xcode.
+2. Run the `Muzzle` scheme from Xcode.
 
 3. Open the menu bar item and verify:
 
@@ -57,7 +57,7 @@
 Stream app logs while testing:
 
 ```sh
-log stream --style compact --predicate 'subsystem == "DontBlastMySound"'
+log stream --style compact --predicate 'subsystem == "Muzzle"'
 ```
 
 Useful events:

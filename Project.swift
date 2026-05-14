@@ -1,35 +1,35 @@
 import ProjectDescription
 
 let project = Project(
-    name: "DontBlastMySound",
+    name: "Muzzle",
     targets: [
         .target(
-            name: "DontBlastMySound",
+            name: "Muzzle",
             destinations: .macOS,
             product: .app,
-            bundleId: "dev.tuist.DontBlastMySound",
+            bundleId: "dev.tuist.Muzzle",
             deploymentTargets: .macOS("26.0"),
             infoPlist: .extendingDefault(with: [
                 "LSUIElement": true,
                 "NSLocationWhenInUseUsageDescription": "Speaker Lock uses your current Wi-Fi network name to detect when you may have moved to a new environment.",
             ]),
             buildableFolders: [
-                "DontBlastMySound/Sources",
-                "DontBlastMySound/Resources",
+                "Muzzle/Sources",
+                "Muzzle/Resources",
             ],
             dependencies: []
         ),
         .target(
-            name: "DontBlastMySoundTests",
+            name: "MuzzleTests",
             destinations: .macOS,
             product: .unitTests,
-            bundleId: "dev.tuist.DontBlastMySoundTests",
+            bundleId: "dev.tuist.MuzzleTests",
             deploymentTargets: .macOS("26.0"),
             infoPlist: .default,
             buildableFolders: [
-                "DontBlastMySound/Tests"
+                "Muzzle/Tests"
             ],
-            dependencies: [.target(name: "DontBlastMySound")]
+            dependencies: [.target(name: "Muzzle")]
         ),
     ]
 )

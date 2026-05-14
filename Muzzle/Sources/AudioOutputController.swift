@@ -48,7 +48,7 @@ struct AudioOutputDevice: Equatable {
 }
 
 final class AudioOutputController {
-    private let logger = Logger(subsystem: "DontBlastMySound", category: "AudioOutput")
+    private let logger = Logger(subsystem: "Muzzle", category: "AudioOutput")
     private var isObservingDefaultOutput = false
 
     var onDefaultOutputChanged: (@MainActor (AudioOutputDevice?) -> Void)?

@@ -2,7 +2,7 @@ import CoreAudio
 import CoreLocation
 import Network
 import Testing
-@testable import DontBlastMySound
+@testable import Muzzle
 
 struct AudioOutputDeviceTests {
     @Test

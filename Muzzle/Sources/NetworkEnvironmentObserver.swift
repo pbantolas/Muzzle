@@ -132,9 +132,9 @@ enum NetworkEnvironmentTrigger: Equatable {
 }
 
 final class NetworkEnvironmentObserver {
-    private let logger = Logger(subsystem: "DontBlastMySound", category: "NetworkEnvironment")
+    private let logger = Logger(subsystem: "Muzzle", category: "NetworkEnvironment")
     private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(label: "DontBlastMySound.NetworkEnvironmentObserver")
+    private let queue = DispatchQueue(label: "Muzzle.NetworkEnvironmentObserver")
     private let wifiClient = CWWiFiClient.shared()
     private let locationAuthorizationController = LocationAuthorizationController()
 

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct DontBlastMySoundApp: App {
+struct MuzzleApp: App {
     @State private var speakerLock = SpeakerLockState()
 
     var body: some Scene {

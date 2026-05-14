@@ -1,4 +1,4 @@
-# DontBlastMySound MVP Brief
+# Muzzle MVP Brief
 
 ## Problem
 

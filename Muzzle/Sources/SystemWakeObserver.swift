@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 
 final class SystemWakeObserver {
-    private let logger = Logger(subsystem: "DontBlastMySound", category: "SystemWake")
+    private let logger = Logger(subsystem: "Muzzle", category: "SystemWake")
     private var wakeObserver: NSObjectProtocol?
 
     var onWake: (@MainActor () -> Void)?

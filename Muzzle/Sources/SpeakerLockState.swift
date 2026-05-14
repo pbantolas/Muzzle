@@ -6,7 +6,7 @@ import OSLog
 @MainActor
 @Observable
 final class SpeakerLockState {
-    private let logger = Logger(subsystem: "DontBlastMySound", category: "SpeakerLock")
+    private let logger = Logger(subsystem: "Muzzle", category: "SpeakerLock")
     private let audioOutputController = AudioOutputController()
     private let networkEnvironmentObserver = NetworkEnvironmentObserver()
     private let systemWakeObserver = SystemWakeObserver()
@@ -386,7 +386,7 @@ final class SpeakerLockState {
         }
 
         return """
-        DontBlastMySound Diagnostics
+        Muzzle Diagnostics
         Generated: \(Self.diagnosticsTimestamp(Date()))
         Timezone: \(TimeZone.current.identifier) (\(Self.timeZoneOffsetText))
 

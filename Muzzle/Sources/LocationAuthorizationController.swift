@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 
 final class LocationAuthorizationController: NSObject, CLLocationManagerDelegate {
-    private let logger = Logger(subsystem: "DontBlastMySound", category: "LocationAuthorization")
+    private let logger = Logger(subsystem: "Muzzle", category: "LocationAuthorization")
     private let manager = CLLocationManager()
 
     var onAuthorizationChanged: (@MainActor (CLAuthorizationStatus) -> Void)?
