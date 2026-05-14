@@ -9,14 +9,52 @@ struct MuzzleApp: App {
         MenuBarExtra {
             SpeakerLockMenu(state: speakerLock)
         } label: {
-            renderedMenuBarIcon
+            MenuBarIconRenderer.image(for: menuBarIconState)
         }
         .menuBarExtraStyle(.menu)
     }
 
-    private var renderedMenuBarIcon: Image {
+    private var menuBarIconState: MenuBarIconState {
+        guard speakerLock.alwaysProtectionEnabled || speakerLock.roamingProtectionEnabled else {
+            return .off
+        }
+
+        if speakerLock.isProtectionPauseActive {
+            return .paused
+        }
+
+        return .active
+    }
+}
+
+private enum MenuBarIconState: Hashable {
+    case off
+    case paused
+    case active
+
+    var muzzleOpacity: Double {
+        switch self {
+        case .off:
+            0.35
+        case .paused:
+            0.55
+        case .active:
+            1
+        }
+    }
+}
+
+@MainActor
+private enum MenuBarIconRenderer {
+    private static var cache: [MenuBarIconState: NSImage] = [:]
+
+    static func image(for state: MenuBarIconState) -> Image {
+        if let cachedImage = cache[state] {
+            return Image(nsImage: cachedImage)
+        }
+
         let renderer = ImageRenderer(
-            content: MenuBarIcon(isProtectionEnabled: speakerLock.alwaysProtectionEnabled || speakerLock.roamingProtectionEnabled)
+            content: MenuBarIcon(state: state)
         )
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
 
@@ -26,12 +64,14 @@ struct MuzzleApp: App {
 
         nsImage.isTemplate = true
         nsImage.size = NSSize(width: 30, height: 18)
+        cache[state] = nsImage
+
         return Image(nsImage: nsImage)
     }
 }
 
 private struct MenuBarIcon: View {
-    let isProtectionEnabled: Bool
+    let state: MenuBarIconState
 
     var body: some View {
         ZStack {
@@ -40,7 +80,7 @@ private struct MenuBarIcon: View {
 
             Image("SpeakerLockMenuBarMuzzle")
                 .renderingMode(.template)
-                .opacity(isProtectionEnabled ? 1 : 0.35)
+                .opacity(state.muzzleOpacity)
         }
         .frame(width: 30, height: 18)
     }

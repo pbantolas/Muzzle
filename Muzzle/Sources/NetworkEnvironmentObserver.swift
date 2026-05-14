@@ -131,88 +131,198 @@ enum NetworkEnvironmentTrigger: Equatable {
     }
 }
 
-final class NetworkEnvironmentObserver {
+final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
     private let logger = Logger(subsystem: "Muzzle", category: "NetworkEnvironment")
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "Muzzle.NetworkEnvironmentObserver")
     private let wifiClient = CWWiFiClient.shared()
     private let locationAuthorizationController = LocationAuthorizationController()
+    private static let queueKey = DispatchSpecificKey<Void>()
+    private let monitoredWiFiEvents: [CWEventType] = [
+        .ssidDidChange,
+        .bssidDidChange,
+        .linkDidChange,
+        .powerDidChange,
+    ]
 
     private var lastSnapshot: NetworkEnvironmentSnapshot?
     private var lastTrigger: NetworkEnvironmentTrigger?
     private var latestPath: NWPath?
+    private var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     private var recentEvents: [String] = []
-    private var pendingDebounceTask: Task<Void, Never>?
+    private var pendingDebounceWorkItem: DispatchWorkItem?
+    private var debounceGeneration = 0
+    private var registeredWiFiEvents: [CWEventType] = []
     private var isObserving = false
 
-    var onNetworkEnvironmentChanged: (@MainActor (NetworkEnvironmentChange) -> Void)?
-    var onDebugStateChanged: (@MainActor (NetworkEnvironmentDebugState) -> Void)?
+    @MainActor var onNetworkEnvironmentChanged: (@MainActor (NetworkEnvironmentChange) -> Void)?
+    @MainActor var onDebugStateChanged: (@MainActor (NetworkEnvironmentDebugState) -> Void)?
+
+    override init() {
+        super.init()
+        queue.setSpecific(key: Self.queueKey, value: ())
+    }
 
     deinit {
         stopObserving()
     }
 
     func startObserving() {
+        let initialAuthorizationStatus = locationAuthorizationController.authorizationStatus
+        locationAuthorizationController.onAuthorizationChanged = { [weak self] status in
+            self?.queue.async {
+                self?.handleLocationAuthorizationChanged(status)
+            }
+        }
+        locationAuthorizationController.requestAuthorizationIfNeeded()
+
+        runOnQueue {
+            self.startObservingOnQueue(initialAuthorizationStatus: initialAuthorizationStatus)
+        }
+    }
+
+    func stopObserving() {
+        locationAuthorizationController.onAuthorizationChanged = nil
+
+        runOnQueueSynchronously {
+            self.stopObservingOnQueue()
+        }
+    }
+
+    func ssidDidChangeForWiFiInterface(withName interfaceName: String) {
+        enqueueWiFiIdentityCheck(event: "SSID changed", interfaceName: interfaceName)
+    }
+
+    func bssidDidChangeForWiFiInterface(withName interfaceName: String) {
+        enqueueWiFiIdentityCheck(event: "BSSID changed", interfaceName: interfaceName)
+    }
+
+    func linkDidChangeForWiFiInterface(withName interfaceName: String) {
+        enqueueWiFiIdentityCheck(event: "link changed", interfaceName: interfaceName)
+    }
+
+    func powerStateDidChangeForWiFiInterface(withName interfaceName: String) {
+        enqueueWiFiIdentityCheck(event: "power changed", interfaceName: interfaceName)
+    }
+
+    func clientConnectionInterrupted() {
+        queue.async {
+            guard self.isObserving else {
+                return
+            }
+
+            self.appendDiagnosticEvent("CoreWLAN connection interrupted")
+            self.scheduleEnvironmentCheck(reason: "CoreWLAN connection interrupted")
+        }
+    }
+
+    func clientConnectionInvalidated() {
+        queue.async {
+            guard self.isObserving else {
+                return
+            }
+
+            self.appendDiagnosticEvent("CoreWLAN connection invalidated")
+            self.scheduleEnvironmentCheck(reason: "CoreWLAN connection invalidated")
+        }
+    }
+
+    private func startObservingOnQueue(initialAuthorizationStatus: CLAuthorizationStatus) {
         guard !isObserving else {
             return
         }
 
-        locationAuthorizationController.onAuthorizationChanged = { [weak self] _ in
-            self?.appendDiagnosticEvent("location authorization changed")
-            self?.refreshCurrentSnapshotForDebug()
-        }
-        locationAuthorizationController.requestAuthorizationIfNeeded()
+        locationAuthorizationStatus = initialAuthorizationStatus
 
         monitor.pathUpdateHandler = { [weak self] path in
-            self?.latestPath = path
-            self?.appendDiagnosticEvent("path update: \(NetworkPathMaterial(path: path).debugSummary)")
-            self?.scheduleEnvironmentCheck(for: path)
+            self?.handlePathUpdate(path)
         }
         monitor.start(queue: queue)
+        startMonitoringWiFiEvents()
         isObserving = true
-        appendDiagnosticEvent("started observing network path changes")
-        logger.info("Started observing network path changes")
+        appendDiagnosticEvent("started observing network path and Wi-Fi identity changes")
+        logger.info("Started observing network path and Wi-Fi identity changes")
     }
 
-    func stopObserving() {
+    private func stopObservingOnQueue() {
         guard isObserving else {
             return
         }
 
-        pendingDebounceTask?.cancel()
-        pendingDebounceTask = nil
+        pendingDebounceWorkItem?.cancel()
+        pendingDebounceWorkItem = nil
+        debounceGeneration += 1
+        stopMonitoringWiFiEvents()
         monitor.cancel()
+        monitor.pathUpdateHandler = nil
         isObserving = false
-        appendDiagnosticEvent("stopped observing network path changes")
-        logger.info("Stopped observing network path changes")
+        appendDiagnosticEvent("stopped observing network path and Wi-Fi identity changes")
+        logger.info("Stopped observing network path and Wi-Fi identity changes")
     }
 
-    private func scheduleEnvironmentCheck(for path: NWPath) {
-        pendingDebounceTask?.cancel()
-        pendingDebounceTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
+    private func handlePathUpdate(_ path: NWPath) {
+        guard isObserving else {
+            return
+        }
 
-            guard !Task.isCancelled else {
+        latestPath = path
+        appendDiagnosticEvent("path update: \(NetworkPathMaterial(path: path).debugSummary)")
+        scheduleEnvironmentCheck(reason: "path update")
+    }
+
+    private func handleLocationAuthorizationChanged(_ status: CLAuthorizationStatus) {
+        guard isObserving else {
+            return
+        }
+
+        locationAuthorizationStatus = status
+        appendDiagnosticEvent("location authorization changed")
+        refreshCurrentSnapshotForDebug()
+    }
+
+    private func enqueueWiFiIdentityCheck(event: String, interfaceName: String) {
+        queue.async {
+            guard self.isObserving else {
                 return
             }
 
-            self?.handleEnvironmentCheck(for: path)
+            self.appendDiagnosticEvent("CoreWLAN \(event) on \(interfaceName)")
+            self.scheduleEnvironmentCheck(reason: "CoreWLAN \(event)")
         }
     }
 
-    private func handleEnvironmentCheck(for path: NWPath) {
+    private func scheduleEnvironmentCheck(reason: String) {
+        pendingDebounceWorkItem?.cancel()
+        debounceGeneration += 1
+        let generation = debounceGeneration
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.isObserving, self.debounceGeneration == generation else {
+                return
+            }
+
+            self.pendingDebounceWorkItem = nil
+            self.handleEnvironmentCheck(reason: reason)
+        }
+
+        pendingDebounceWorkItem = workItem
+        queue.asyncAfter(deadline: .now() + .seconds(1), execute: workItem)
+    }
+
+    private func handleEnvironmentCheck(reason: String) {
+        let path = latestPath ?? monitor.currentPath
         let currentSnapshot = snapshot(for: path)
 
         guard let previousSnapshot = lastSnapshot else {
             lastSnapshot = currentSnapshot
-            appendDiagnosticEvent("captured initial snapshot: \(currentSnapshot.debugSummary)")
+            appendDiagnosticEvent("captured initial snapshot after \(reason): \(currentSnapshot.debugSummary)")
             notifyDebugStateChanged()
             logger.info("Captured initial network environment snapshot")
             return
         }
 
         lastSnapshot = currentSnapshot
-        appendDiagnosticEvent("checked snapshot: \(currentSnapshot.debugSummary)")
+        appendDiagnosticEvent("checked snapshot after \(reason): \(currentSnapshot.debugSummary)")
         notifyDebugStateChanged()
 
         guard let trigger = trigger(from: previousSnapshot, to: currentSnapshot) else {
@@ -238,12 +348,8 @@ final class NetworkEnvironmentObserver {
     }
 
     private func refreshCurrentSnapshotForDebug() {
-        guard let latestPath else {
-            notifyDebugStateChanged()
-            return
-        }
-
-        lastSnapshot = snapshot(for: latestPath)
+        let path = latestPath ?? monitor.currentPath
+        lastSnapshot = snapshot(for: path)
         notifyDebugStateChanged()
     }
 
@@ -313,12 +419,63 @@ final class NetworkEnvironmentObserver {
         let debugState = NetworkEnvironmentDebugState(
             snapshot: lastSnapshot,
             lastTrigger: lastTrigger,
-            locationAuthorizationStatus: locationAuthorizationController.authorizationStatus,
+            locationAuthorizationStatus: locationAuthorizationStatus,
             recentEvents: recentEvents
         )
 
         Task { @MainActor in
             onDebugStateChanged?(debugState)
+        }
+    }
+
+    private func startMonitoringWiFiEvents() {
+        wifiClient.delegate = self
+
+        for event in monitoredWiFiEvents {
+            do {
+                try wifiClient.startMonitoringEvent(with: event)
+                registeredWiFiEvents.append(event)
+                appendDiagnosticEvent("started CoreWLAN \(event.debugDisplayName) monitoring")
+            } catch {
+                appendDiagnosticEvent("failed CoreWLAN \(event.debugDisplayName) monitoring: \(error.localizedDescription)")
+                logger.error(
+                    "Failed to start CoreWLAN \(event.debugDisplayName, privacy: .public) monitoring: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+    }
+
+    private func stopMonitoringWiFiEvents() {
+        for event in registeredWiFiEvents {
+            do {
+                try wifiClient.stopMonitoringEvent(with: event)
+            } catch {
+                logger.error(
+                    "Failed to stop CoreWLAN \(event.debugDisplayName, privacy: .public) monitoring: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        registeredWiFiEvents.removeAll()
+
+        if wifiClient.delegate === self {
+            wifiClient.delegate = nil
+        }
+    }
+
+    private func runOnQueue(_ work: @escaping () -> Void) {
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            work()
+        } else {
+            queue.async(execute: work)
+        }
+    }
+
+    private func runOnQueueSynchronously(_ work: () -> Void) {
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            work()
+        } else {
+            queue.sync(execute: work)
         }
     }
 
@@ -395,6 +552,23 @@ private extension NWPath.Status {
             "requires connection"
         @unknown default:
             "unknown"
+        }
+    }
+}
+
+private extension CWEventType {
+    var debugDisplayName: String {
+        switch self {
+        case .powerDidChange:
+            "power"
+        case .ssidDidChange:
+            "SSID"
+        case .bssidDidChange:
+            "BSSID"
+        case .linkDidChange:
+            "link"
+        default:
+            "event \(rawValue)"
         }
     }
 }

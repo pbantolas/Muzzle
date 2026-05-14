@@ -1,5 +1,6 @@
 import CoreAudio
 import CoreLocation
+import Foundation
 import Network
 import Testing
 @testable import Muzzle
@@ -173,6 +174,79 @@ struct ProtectionReasonTests {
         #expect(ProtectionReason.wake.displayName == "Mac woke up")
         #expect(ProtectionReason.networkChanged.displayName == "Wi-Fi changed")
         #expect(ProtectionReason.manual.displayName == "manual action")
+    }
+}
+
+@MainActor
+struct SpeakerLockStateTests {
+    @Test
+    func pauseProtectionClearsAtExpiry() async throws {
+        let fixture = try makeDefaults()
+        defer { fixture.tearDown() }
+        let defaults = fixture.defaults
+        let state = SpeakerLockState(defaults: defaults, startObservers: false)
+
+        state.pauseProtection(for: 0.05)
+
+        #expect(state.isProtectionPauseActive)
+
+        try await Task.sleep(nanoseconds: 250_000_000)
+
+        #expect(state.protectionPauseUntil == nil)
+        #expect(!state.isProtectionPauseActive)
+    }
+
+    @Test
+    func startupSchedulesExistingFuturePauseExpiry() async throws {
+        let fixture = try makeDefaults()
+        defer { fixture.tearDown() }
+        let defaults = fixture.defaults
+        let pauseUntil = Date().addingTimeInterval(0.05)
+        defaults.set(pauseUntil, forKey: "protectionPauseUntil")
+
+        let state = SpeakerLockState(defaults: defaults, startObservers: false)
+
+        #expect(state.protectionPauseUntil == pauseUntil)
+        #expect(state.isProtectionPauseActive)
+
+        try await Task.sleep(nanoseconds: 250_000_000)
+
+        #expect(state.protectionPauseUntil == nil)
+        #expect(!state.isProtectionPauseActive)
+    }
+
+    @Test
+    func replacingPauseCancelsEarlierExpiry() async throws {
+        let fixture = try makeDefaults()
+        defer { fixture.tearDown() }
+        let defaults = fixture.defaults
+        let state = SpeakerLockState(defaults: defaults, startObservers: false)
+
+        state.pauseProtection(for: 0.05)
+        state.pauseProtection(for: 60)
+
+        try await Task.sleep(nanoseconds: 250_000_000)
+
+        #expect(state.protectionPauseUntil != nil)
+        #expect(state.isProtectionPauseActive)
+    }
+
+    private func makeDefaults() throws -> DefaultsFixture {
+        let suiteName = "MuzzleTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set(false, forKey: "alwaysProtectionEnabled")
+        defaults.set(false, forKey: "roamingProtectionEnabled")
+        return DefaultsFixture(defaults: defaults, suiteName: suiteName)
+    }
+
+    private struct DefaultsFixture {
+        let defaults: UserDefaults
+        let suiteName: String
+
+        func tearDown() {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
     }
 }
 

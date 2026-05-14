@@ -7,32 +7,35 @@ import OSLog
 @Observable
 final class SpeakerLockState {
     private let logger = Logger(subsystem: "Muzzle", category: "SpeakerLock")
+    private let defaults: UserDefaults
     private let audioOutputController = AudioOutputController()
     private let networkEnvironmentObserver = NetworkEnvironmentObserver()
     private let systemWakeObserver = SystemWakeObserver()
+    @ObservationIgnored private var protectionPauseExpiryTask: Task<Void, Never>?
 
     var alwaysProtectionEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(alwaysProtectionEnabled, forKey: DefaultsKey.alwaysProtectionEnabled)
+            defaults.set(alwaysProtectionEnabled, forKey: DefaultsKey.alwaysProtectionEnabled)
         }
     }
 
     var roamingProtectionEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(roamingProtectionEnabled, forKey: DefaultsKey.roamingProtectionEnabled)
+            defaults.set(roamingProtectionEnabled, forKey: DefaultsKey.roamingProtectionEnabled)
         }
     }
 
     var protectionPauseUntil: Date? {
         didSet {
-            UserDefaults.standard.set(protectionPauseUntil, forKey: DefaultsKey.protectionPauseUntil)
-            UserDefaults.standard.removeObject(forKey: LegacyDefaultsKey.speakerAllowanceUntil)
+            defaults.set(protectionPauseUntil, forKey: DefaultsKey.protectionPauseUntil)
+            defaults.removeObject(forKey: LegacyDefaultsKey.speakerAllowanceUntil)
+            scheduleProtectionPauseExpiry()
         }
     }
 
     var lastProtectionReason: ProtectionReason? {
         didSet {
-            UserDefaults.standard.set(lastProtectionReason?.rawValue, forKey: DefaultsKey.lastProtectionReason)
+            defaults.set(lastProtectionReason?.rawValue, forKey: DefaultsKey.lastProtectionReason)
         }
     }
 
@@ -46,15 +49,21 @@ final class SpeakerLockState {
     )
     private var recentProtectionEvents: [String] = []
 
-    init() {
-        alwaysProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
-        roamingProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ?? true
+    init(defaults: UserDefaults = .standard, startObservers: Bool = true) {
+        self.defaults = defaults
+        alwaysProtectionEnabled = defaults.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
+        roamingProtectionEnabled = defaults.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ?? true
         protectionPauseUntil =
-            UserDefaults.standard.object(forKey: DefaultsKey.protectionPauseUntil) as? Date ??
-            UserDefaults.standard.object(forKey: LegacyDefaultsKey.speakerAllowanceUntil) as? Date
+            defaults.object(forKey: DefaultsKey.protectionPauseUntil) as? Date ??
+            defaults.object(forKey: LegacyDefaultsKey.speakerAllowanceUntil) as? Date
 
-        if let rawReason = UserDefaults.standard.string(forKey: DefaultsKey.lastProtectionReason) {
+        if let rawReason = defaults.string(forKey: DefaultsKey.lastProtectionReason) {
             lastProtectionReason = ProtectionReason(rawValue: rawReason)
+        }
+
+        guard startObservers else {
+            scheduleProtectionPauseExpiry()
+            return
         }
 
         audioOutputController.onDefaultOutputChanged = { [weak self] output in
@@ -73,6 +82,11 @@ final class SpeakerLockState {
         networkEnvironmentObserver.startObserving()
         systemWakeObserver.startObserving()
         refreshCurrentOutput()
+        scheduleProtectionPauseExpiry()
+    }
+
+    deinit {
+        protectionPauseExpiryTask?.cancel()
     }
 
     var isProtectionPauseActive: Bool {
@@ -331,6 +345,64 @@ final class SpeakerLockState {
 
             self.blockSpeakers(refreshedOutput, reason: .outputChanged)
         }
+    }
+
+    private func scheduleProtectionPauseExpiry() {
+        protectionPauseExpiryTask?.cancel()
+        protectionPauseExpiryTask = nil
+
+        guard let protectionPauseUntil else {
+            return
+        }
+
+        guard protectionPauseUntil > Date() else {
+            expireProtectionPause(expectedPauseUntil: protectionPauseUntil)
+            return
+        }
+
+        protectionPauseExpiryTask = Task { [weak self, protectionPauseUntil] in
+            let delay = max(0, protectionPauseUntil.timeIntervalSinceNow)
+            let nanoseconds = UInt64((delay * 1_000_000_000).rounded(.up))
+
+            do {
+                try await Task.sleep(nanoseconds: nanoseconds)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else {
+                return
+            }
+
+            self?.expireProtectionPause(expectedPauseUntil: protectionPauseUntil)
+        }
+    }
+
+    private func expireProtectionPause(expectedPauseUntil: Date) {
+        guard protectionPauseUntil == expectedPauseUntil else {
+            appendProtectionEvent("stale protection pause expiry ignored")
+            return
+        }
+
+        protectionPauseUntil = nil
+        lastAudioActionMessage = "Protection pause expired"
+        appendProtectionEvent("protection pause expired")
+        logger.info("Protection pause expired; protection resumed")
+
+        guard alwaysProtectionEnabled || roamingProtectionEnabled else {
+            appendProtectionEvent("expiry recheck skipped: protections disabled")
+            return
+        }
+
+        let refreshedOutput = audioOutputController.currentDefaultOutput()
+        currentOutput = refreshedOutput
+        appendProtectionEvent("expiry recheck: \(refreshedOutput?.name ?? "nil"), builtInSpeaker=\(refreshedOutput?.isBuiltInSpeaker == true)")
+
+        guard let refreshedOutput, refreshedOutput.isBuiltInSpeaker else {
+            return
+        }
+
+        blockSpeakers(refreshedOutput, reason: .manual)
     }
 
     private func blockSpeakers(_ output: AudioOutputDevice, reason: ProtectionReason) {
