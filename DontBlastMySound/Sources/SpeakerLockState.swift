@@ -100,31 +100,27 @@ final class SpeakerLockState {
             return "Allowed - built-in speakers for \(allowanceRemainingText)"
         }
 
-        if let currentOutput {
-            if currentOutput.isBuiltInSpeaker {
-                if let lastProtectionReason {
-                    return "Blocked - \(currentOutput.name) by \(lastProtectionReason.displayName)"
+        if let currentOutput, currentOutput.isBuiltInSpeaker, let lastProtectionReason {
+            return "Protected - blocked by \(lastProtectionReason.displayName)"
+        }
+
+        if let protectionModeTitle {
+            if let currentOutput {
+                if currentOutput.isBuiltInSpeaker {
+                    return "Protected - guarding built-in speakers"
                 }
 
-                if alwaysProtectionEnabled || roamingProtectionEnabled {
-                    return "Attention Needed - \(currentOutput.name) active"
-                }
-
-                return "Unprotected - \(currentOutput.name) active"
-            }
-
-            if alwaysProtectionEnabled || roamingProtectionEnabled {
                 return "Protected - \(currentOutput.name) connected"
             }
 
-            return "Monitoring Off - \(currentOutput.name) connected"
+            return "Protected - \(protectionModeTitle)"
         }
 
-        if alwaysProtectionEnabled || roamingProtectionEnabled {
-            return "Protected - waiting for audio output"
+        if let currentOutput {
+            return "Not protected - \(currentOutput.name) connected"
         }
 
-        return "Monitoring Off - waiting for audio output"
+        return "Not protected - monitoring off"
     }
 
     var statusMenuIcon: String {
@@ -165,21 +161,39 @@ final class SpeakerLockState {
 
     var menuBarBadgeSystemImage: String? {
         if isSpeakerAllowanceActive {
-            return "exclamationmark.fill"
+            return "clock.fill"
         }
-        if currentOutput?.isBuiltInSpeaker == true {
-            if lastProtectionReason != nil {
-                return "lock.fill"
-            }
-            if alwaysProtectionEnabled || roamingProtectionEnabled {
-                return "exclamationmark.fill"
-            }
+
+        if let currentOutput, currentOutput.isBuiltInSpeaker, lastProtectionReason != nil {
+            return "lock.fill"
+        }
+
+        if alwaysProtectionEnabled && roamingProtectionEnabled {
+            return "shield.fill"
+        }
+
+        if alwaysProtectionEnabled {
+            return "headphones"
+        }
+
+        if roamingProtectionEnabled {
+            return "location.fill"
+        }
+
+        return "slash.circle.fill"
+    }
+
+    private var protectionModeTitle: String? {
+        switch (alwaysProtectionEnabled, roamingProtectionEnabled) {
+        case (true, true):
+            return "headphones and location active"
+        case (true, false):
+            return "headphones active"
+        case (false, true):
+            return "location active"
+        case (false, false):
             return nil
         }
-        if alwaysProtectionEnabled || roamingProtectionEnabled {
-            return "checkmark"
-        }
-        return nil
     }
 
     func allowSpeakers(for duration: TimeInterval) {
