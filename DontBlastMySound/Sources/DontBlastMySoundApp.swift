@@ -8,7 +8,14 @@ struct DontBlastMySoundApp: App {
         MenuBarExtra {
             SpeakerLockMenu(state: speakerLock)
         } label: {
-            Label("Speaker Lock", systemImage: speakerLock.menuBarSystemImage)
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: "waveform")
+                if let badge = speakerLock.menuBarBadgeSystemImage {
+                    Image(systemName: badge)
+                        .font(.system(size: 6.5, weight: .bold))
+                        .offset(x: 4, y: 3)
+                }
+            }
         }
         .menuBarExtraStyle(.menu)
     }

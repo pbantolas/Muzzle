@@ -4,35 +4,46 @@ struct SpeakerLockMenu: View {
     @Bindable var state: SpeakerLockState
 
     var body: some View {
-        Toggle("Always protect on output changes", isOn: $state.alwaysProtectionEnabled)
-        Toggle("Roaming protection", isOn: $state.roamingProtectionEnabled)
+        statusRow
 
         Divider()
 
-        statusLabel
-        outputLabel
+        Button("Allow for 5 minutes", systemImage: "speaker.wave.2") {
+            state.allowSpeakers(for: 5 * 60)
+        }
 
-        if let lastAudioActionMessage = state.lastAudioActionMessage {
-            Label(lastAudioActionMessage, systemImage: "waveform")
-        }
-        if let lastDiagnosticsCopyMessage = state.lastDiagnosticsCopyMessage {
-            Label(lastDiagnosticsCopyMessage, systemImage: "doc.on.clipboard")
-        }
-        if let currentOutput = state.currentOutput {
-            Label(currentOutput.builtInSpeakerDetectionReason, systemImage: "info.circle")
+        Button("Allow for 30 minutes", systemImage: "speaker.wave.2") {
+            state.allowSpeakers(for: 30 * 60)
         }
 
         Divider()
 
-        Label(state.networkDebugState.wifiSummary, systemImage: "wifi")
-        Label(state.networkDebugState.wifiIdentitySummary, systemImage: "location")
-        Label(state.networkDebugState.locationAuthorizationSummary, systemImage: "location.circle")
-        Label(state.networkDebugState.pathSummary, systemImage: "point.3.connected.trianglepath.dotted")
-        Label(state.networkDebugState.triggerSummary, systemImage: "arrow.triangle.branch")
+        Toggle("Block when headphones disconnect", isOn: $state.alwaysProtectionEnabled)
+        Toggle("Block when changing location", isOn: $state.roamingProtectionEnabled)
 
         Divider()
 
-        Button("Refresh Current Output", systemImage: "arrow.clockwise") {
+        Menu("Network info") {
+            Label(state.networkInfoSummary, systemImage: "wifi")
+            Label(state.networkDebugState.locationAuthorizationSummary, systemImage: "location.circle")
+
+#if DEBUG
+            Divider()
+            Label(state.networkDebugState.wifiIdentitySummary, systemImage: "network")
+            Label(state.networkDebugState.pathSummary, systemImage: "point.3.connected.trianglepath.dotted")
+            Label(state.networkDebugState.triggerSummary, systemImage: "arrow.triangle.branch")
+
+            if let currentOutput = state.currentOutput {
+                Label(currentOutput.builtInSpeakerDetectionReason, systemImage: "info.circle")
+            }
+
+            if let lastAudioActionMessage = state.lastAudioActionMessage {
+                Label(lastAudioActionMessage, systemImage: "waveform")
+            }
+#endif
+        }
+
+        Button("Refresh Status", systemImage: "arrow.clockwise") {
             state.refreshCurrentOutput()
         }
 
@@ -40,17 +51,11 @@ struct SpeakerLockMenu: View {
             state.copyDiagnosticsToClipboard()
         }
 
-        Button("Allow Built-in Speakers for 5 Minutes", systemImage: "speaker.wave.2") {
-            state.allowSpeakers(for: 5 * 60)
-        }
-
-        Button("Allow Built-in Speakers for 30 Minutes", systemImage: "speaker.wave.2") {
-            state.allowSpeakers(for: 30 * 60)
-        }
-
+#if DEBUG
         Button("Block Built-in Speakers Now", systemImage: "speaker.slash") {
             state.blockSpeakersNow()
         }
+#endif
 
         Divider()
 
@@ -60,19 +65,12 @@ struct SpeakerLockMenu: View {
         .keyboardShortcut("q")
     }
 
-    private var statusLabel: some View {
+    private var statusRow: some View {
         Label {
-            Text("Status: \(state.statusText)")
+            Text(state.statusMenuTitle)
+                .fontWeight(.semibold)
         } icon: {
-            Image(systemName: state.menuBarSystemImage)
-        }
-    }
-
-    private var outputLabel: some View {
-        Label {
-            Text("Output: \(state.currentOutput?.name ?? "Unknown")")
-        } icon: {
-            Image(systemName: state.currentOutput?.isBuiltInSpeaker == true ? "speaker" : "headphones")
+            Image(systemName: state.statusMenuIcon)
         }
     }
 }

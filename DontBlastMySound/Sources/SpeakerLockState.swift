@@ -37,7 +37,6 @@ final class SpeakerLockState {
 
     var currentOutput: AudioOutputDevice?
     var lastAudioActionMessage: String?
-    var lastDiagnosticsCopyMessage: String?
     var networkDebugState = NetworkEnvironmentDebugState(
         snapshot: nil,
         lastTrigger: nil,
@@ -93,35 +92,94 @@ final class SpeakerLockState {
     }
 
     var statusText: String {
-        if let allowanceRemainingText {
-            return "Speakers allowed, \(allowanceRemainingText)"
-        }
+        statusMenuTitle
+    }
 
-        if let lastProtectionReason {
-            return "Speakers blocked by \(lastProtectionReason.displayName)"
+    var statusMenuTitle: String {
+        if let allowanceRemainingText {
+            return "Allowed - built-in speakers for \(allowanceRemainingText)"
         }
 
         if let currentOutput {
-            return "\(currentOutput.name) \(currentOutput.isBuiltInSpeaker ? "detected as built-in speakers" : "allowed")"
+            if currentOutput.isBuiltInSpeaker {
+                if let lastProtectionReason {
+                    return "Blocked - \(currentOutput.name) by \(lastProtectionReason.displayName)"
+                }
+
+                if alwaysProtectionEnabled || roamingProtectionEnabled {
+                    return "Attention Needed - \(currentOutput.name) active"
+                }
+
+                return "Unprotected - \(currentOutput.name) active"
+            }
+
+            if alwaysProtectionEnabled || roamingProtectionEnabled {
+                return "Protected - \(currentOutput.name) connected"
+            }
+
+            return "Monitoring Off - \(currentOutput.name) connected"
         }
 
         if alwaysProtectionEnabled || roamingProtectionEnabled {
-            return "Protection idle"
+            return "Protected - waiting for audio output"
         }
 
-        return "Protection off"
+        return "Monitoring Off - waiting for audio output"
     }
 
-    var menuBarSystemImage: String {
+    var statusMenuIcon: String {
         if isSpeakerAllowanceActive {
-            return "speaker.wave.2"
+            return "speaker.wave.2.fill"
+        }
+
+        if currentOutput?.isBuiltInSpeaker == true {
+            if lastProtectionReason != nil {
+                return "speaker.slash.fill"
+            }
+
+            return (alwaysProtectionEnabled || roamingProtectionEnabled) ? "exclamationmark.shield.fill" : "speaker.fill"
         }
 
         if alwaysProtectionEnabled || roamingProtectionEnabled {
-            return "speaker.slash"
+            return "checkmark.shield.fill"
         }
 
         return "speaker"
+    }
+
+    var networkInfoSummary: String {
+        guard let wifiIdentity = networkDebugState.snapshot?.wifiIdentity else {
+            return "No Wi-Fi details"
+        }
+
+        if let ssid = wifiIdentity.ssid {
+            return "Wi-Fi: \(ssid)"
+        }
+
+        if let interfaceName = wifiIdentity.interfaceName {
+            return "Wi-Fi: \(interfaceName)"
+        }
+
+        return "Wi-Fi available"
+    }
+
+    var menuBarBadgeSystemImage: String? {
+        if isSpeakerAllowanceActive {
+            return "exclamationmark.fill"
+        }
+        if currentOutput?.isBuiltInSpeaker == true {
+            if lastProtectionReason != nil {
+                return "lock.fill"
+            }
+            if alwaysProtectionEnabled || roamingProtectionEnabled {
+                return "exclamationmark.fill"
+            }
+            return nil
+        }
+        if alwaysProtectionEnabled || roamingProtectionEnabled {
+            return "checkmark"
+        }
+        return nil
     }
 
     func allowSpeakers(for duration: TimeInterval) {
@@ -212,7 +270,6 @@ final class SpeakerLockState {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(report, forType: .string)
-        lastDiagnosticsCopyMessage = "Diagnostics copied"
         appendProtectionEvent("diagnostics copied to clipboard")
     }
 
