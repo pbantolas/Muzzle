@@ -316,6 +316,18 @@ final class SpeakerLockState {
     }
 
     private func diagnosticsReport() -> String {
+        let allowanceStatus: String
+        if let speakerAllowanceUntil {
+            if isSpeakerAllowanceActive {
+                allowanceStatus = "ACTIVE until \(Self.diagnosticsTimestamp(speakerAllowanceUntil)) (\(allowanceRemainingText ?? "less than 1m left"))"
+            } else {
+                allowanceStatus = "expired at \(Self.diagnosticsTimestamp(speakerAllowanceUntil))"
+            }
+        } else {
+            allowanceStatus = "none"
+        }
+
+        let protectionDiagnosis = diagnosticsProtectionDiagnosis(allowanceStatus: allowanceStatus)
         let outputLines: [String]
         if let currentOutput {
             outputLines = [
@@ -334,12 +346,16 @@ final class SpeakerLockState {
 
         return """
         DontBlastMySound Diagnostics
-        Generated: \(Date())
+        Generated: \(Self.diagnosticsTimestamp(Date()))
+        Timezone: \(TimeZone.current.identifier) (\(Self.timeZoneOffsetText))
+
+        Protection Diagnosis
+        \(protectionDiagnosis)
 
         App State
         Always protection: \(alwaysProtectionEnabled)
         Roaming protection: \(roamingProtectionEnabled)
-        Speaker allowance until: \(speakerAllowanceUntil?.description ?? "nil")
+        Speaker allowance: \(allowanceStatus)
         Speaker allowance active: \(isSpeakerAllowanceActive)
         Last protection reason: \(lastProtectionReason?.rawValue ?? "nil")
         Last audio action: \(lastAudioActionMessage ?? "nil")
@@ -363,6 +379,39 @@ final class SpeakerLockState {
         """
     }
 
+    private func diagnosticsProtectionDiagnosis(allowanceStatus: String) -> String {
+        var lines: [String] = []
+
+        if !alwaysProtectionEnabled && !roamingProtectionEnabled {
+            lines.append("Protections are disabled.")
+        } else if isSpeakerAllowanceActive {
+            lines.append("Temporary speaker allowance is ACTIVE. Built-in speaker blocks are intentionally suppressed.")
+            lines.append("Allowance: \(allowanceStatus)")
+        } else {
+            lines.append("No active speaker allowance. Built-in speakers should be blocked on matching protection triggers.")
+        }
+
+        if let currentOutput {
+            lines.append("Current output is \(currentOutput.isBuiltInSpeaker ? "built-in speakers" : "not built-in speakers"): \(currentOutput.name).")
+        } else {
+            lines.append("Current output is unknown.")
+        }
+
+        if let lastProtectionEvent = recentProtectionEvents.last {
+            lines.append("Last protection event: \(lastProtectionEvent)")
+        } else {
+            lines.append("Last protection event: none")
+        }
+
+        if let lastNetworkEvent = networkDebugState.recentEvents.last {
+            lines.append("Last network event: \(lastNetworkEvent)")
+        } else {
+            lines.append("Last network event: none")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     private func appendProtectionEvent(_ message: String) {
         recentProtectionEvents.append("\(Self.timestamp()): \(message)")
         if recentProtectionEvents.count > 60 {
@@ -371,10 +420,33 @@ final class SpeakerLockState {
     }
 
     private static func timestamp() -> String {
+        diagnosticsTimeFormatter.string(from: Date())
+    }
+
+    private static func diagnosticsTimestamp(_ date: Date) -> String {
+        diagnosticsDateTimeFormatter.string(from: date)
+    }
+
+    private static var timeZoneOffsetText: String {
+        let seconds = TimeZone.current.secondsFromGMT()
+        let sign = seconds >= 0 ? "+" : "-"
+        let absoluteSeconds = abs(seconds)
+        let hours = absoluteSeconds / 3600
+        let minutes = (absoluteSeconds % 3600) / 60
+        return String(format: "UTC%@%02d:%02d", sign, hours, minutes)
+    }
+
+    private static let diagnosticsTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: Date())
-    }
+        return formatter
+    }()
+
+    private static let diagnosticsDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS ZZZZ"
+        return formatter
+    }()
 }
 
 enum ProtectionReason: String {

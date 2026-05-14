@@ -323,10 +323,14 @@ final class NetworkEnvironmentObserver {
     }
 
     private static func timestamp() -> String {
+        diagnosticsTimeFormatter.string(from: Date())
+    }
+
+    private static let diagnosticsTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: Date())
-    }
+        return formatter
+    }()
 }
 
 extension NetworkPathMaterial {
