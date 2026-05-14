@@ -23,6 +23,7 @@ struct NetworkEnvironmentDebugState: Equatable {
     let snapshot: NetworkEnvironmentSnapshot?
     let lastTrigger: NetworkEnvironmentTrigger?
     let locationAuthorizationStatus: CLAuthorizationStatus
+    let recentEvents: [String]
 
     var wifiSummary: String {
         guard let wifiIdentity = snapshot?.wifiIdentity else {
@@ -140,6 +141,7 @@ final class NetworkEnvironmentObserver {
     private var lastSnapshot: NetworkEnvironmentSnapshot?
     private var lastTrigger: NetworkEnvironmentTrigger?
     private var latestPath: NWPath?
+    private var recentEvents: [String] = []
     private var pendingDebounceTask: Task<Void, Never>?
     private var isObserving = false
 
@@ -156,16 +158,19 @@ final class NetworkEnvironmentObserver {
         }
 
         locationAuthorizationController.onAuthorizationChanged = { [weak self] _ in
+            self?.appendDiagnosticEvent("location authorization changed")
             self?.refreshCurrentSnapshotForDebug()
         }
         locationAuthorizationController.requestAuthorizationIfNeeded()
 
         monitor.pathUpdateHandler = { [weak self] path in
             self?.latestPath = path
+            self?.appendDiagnosticEvent("path update: \(NetworkPathMaterial(path: path).debugSummary)")
             self?.scheduleEnvironmentCheck(for: path)
         }
         monitor.start(queue: queue)
         isObserving = true
+        appendDiagnosticEvent("started observing network path changes")
         logger.info("Started observing network path changes")
     }
 
@@ -178,6 +183,7 @@ final class NetworkEnvironmentObserver {
         pendingDebounceTask = nil
         monitor.cancel()
         isObserving = false
+        appendDiagnosticEvent("stopped observing network path changes")
         logger.info("Stopped observing network path changes")
     }
 
@@ -199,20 +205,24 @@ final class NetworkEnvironmentObserver {
 
         guard let previousSnapshot = lastSnapshot else {
             lastSnapshot = currentSnapshot
+            appendDiagnosticEvent("captured initial snapshot: \(currentSnapshot.debugSummary)")
             notifyDebugStateChanged()
             logger.info("Captured initial network environment snapshot")
             return
         }
 
         lastSnapshot = currentSnapshot
+        appendDiagnosticEvent("checked snapshot: \(currentSnapshot.debugSummary)")
         notifyDebugStateChanged()
 
         guard let trigger = trigger(from: previousSnapshot, to: currentSnapshot) else {
+            appendDiagnosticEvent("no roaming trigger")
             logger.info("Network path changed without a roaming trigger")
             return
         }
 
         lastTrigger = trigger
+        appendDiagnosticEvent("roaming trigger: \(trigger.debugDisplayName)")
         notifyDebugStateChanged()
         logger.info("Network environment changed. trigger=\(String(describing: trigger), privacy: .public)")
 
@@ -240,14 +250,7 @@ final class NetworkEnvironmentObserver {
     private func snapshot(for path: NWPath) -> NetworkEnvironmentSnapshot {
         NetworkEnvironmentSnapshot(
             wifiIdentity: currentWiFiIdentity(),
-            materialPath: NetworkPathMaterial(
-                status: path.status,
-                usesWiFi: path.usesInterfaceType(.wifi),
-                usesWiredEthernet: path.usesInterfaceType(.wiredEthernet),
-                usesLoopback: path.usesInterfaceType(.loopback),
-                isExpensive: path.isExpensive,
-                isConstrained: path.isConstrained
-            )
+            materialPath: NetworkPathMaterial(path: path)
         )
     }
 
@@ -299,16 +302,81 @@ final class NetworkEnvironmentObserver {
         return .materialPathChanged
     }
 
+    private func appendDiagnosticEvent(_ message: String) {
+        recentEvents.append("\(Self.timestamp()): \(message)")
+        if recentEvents.count > 40 {
+            recentEvents.removeFirst(recentEvents.count - 40)
+        }
+    }
+
     private func notifyDebugStateChanged() {
         let debugState = NetworkEnvironmentDebugState(
             snapshot: lastSnapshot,
             lastTrigger: lastTrigger,
-            locationAuthorizationStatus: locationAuthorizationController.authorizationStatus
+            locationAuthorizationStatus: locationAuthorizationController.authorizationStatus,
+            recentEvents: recentEvents
         )
 
         Task { @MainActor in
             onDebugStateChanged?(debugState)
         }
+    }
+
+    private static func timestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter.string(from: Date())
+    }
+}
+
+extension NetworkPathMaterial {
+    init(path: NWPath) {
+        self.init(
+            status: path.status,
+            usesWiFi: path.usesInterfaceType(.wifi),
+            usesWiredEthernet: path.usesInterfaceType(.wiredEthernet),
+            usesLoopback: path.usesInterfaceType(.loopback),
+            isExpensive: path.isExpensive,
+            isConstrained: path.isConstrained
+        )
+    }
+
+    var debugSummary: String {
+        var interfaces: [String] = []
+        if usesWiFi {
+            interfaces.append("wifi")
+        }
+        if usesWiredEthernet {
+            interfaces.append("ethernet")
+        }
+        if usesLoopback {
+            interfaces.append("loopback")
+        }
+
+        var flags: [String] = []
+        if isExpensive {
+            flags.append("expensive")
+        }
+        if isConstrained {
+            flags.append("constrained")
+        }
+
+        let interfaceText = interfaces.isEmpty ? "none" : interfaces.joined(separator: ",")
+        let flagText = flags.isEmpty ? "none" : flags.joined(separator: ",")
+        return "status=\(status.debugDisplayName), interfaces=\(interfaceText), flags=\(flagText)"
+    }
+}
+
+extension NetworkEnvironmentSnapshot {
+    var debugSummary: String {
+        let wifiText: String
+        if let wifiIdentity {
+            wifiText = "interface=\(wifiIdentity.interfaceName ?? "unknown"), power=\(wifiIdentity.isPowerOn), associated=\(wifiIdentity.isAssociated), ssid=\(wifiIdentity.ssid ?? "nil"), bssid=\(wifiIdentity.bssid ?? "nil")"
+        } else {
+            wifiText = "no wifi interface"
+        }
+
+        return "\(wifiText); \(materialPath.debugSummary)"
     }
 }
 

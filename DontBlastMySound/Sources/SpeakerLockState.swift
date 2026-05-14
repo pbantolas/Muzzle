@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OSLog
@@ -36,11 +37,14 @@ final class SpeakerLockState {
 
     var currentOutput: AudioOutputDevice?
     var lastAudioActionMessage: String?
+    var lastDiagnosticsCopyMessage: String?
     var networkDebugState = NetworkEnvironmentDebugState(
         snapshot: nil,
         lastTrigger: nil,
-        locationAuthorizationStatus: .notDetermined
+        locationAuthorizationStatus: .notDetermined,
+        recentEvents: []
     )
+    private var recentProtectionEvents: [String] = []
 
     init() {
         alwaysProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
@@ -124,19 +128,23 @@ final class SpeakerLockState {
         speakerAllowanceUntil = Date().addingTimeInterval(duration)
         lastProtectionReason = nil
         lastAudioActionMessage = "Built-in speakers allowed temporarily"
+        appendProtectionEvent("temporary speaker allowance set for \(Int(duration))s")
         logger.info("Temporary speaker allowance set for \(duration) seconds")
     }
 
     func blockSpeakersNow() {
         speakerAllowanceUntil = nil
+        appendProtectionEvent("manual block requested")
         guard let currentOutput else {
             lastAudioActionMessage = "No current output device detected"
+            appendProtectionEvent("manual block skipped: no current output")
             logger.error("Manual block requested, but no output device is known")
             return
         }
 
         guard currentOutput.isBuiltInSpeaker else {
             lastAudioActionMessage = "\(currentOutput.name) is not detected as built-in speakers"
+            appendProtectionEvent("manual block skipped: \(currentOutput.name) is not built-in speakers")
             logger.info("Manual block skipped because current output is not built-in speakers: \(currentOutput.name, privacy: .public)")
             return
         }
@@ -146,32 +154,38 @@ final class SpeakerLockState {
 
     func handleRoamingRisk(reason: ProtectionReason) {
         guard reason.isRoamingRisk else {
+            appendProtectionEvent("ignored non-roaming reason: \(reason.rawValue)")
             logger.error("Ignoring non-roaming protection reason: \(reason.rawValue, privacy: .public)")
             return
         }
 
         currentOutput = audioOutputController.currentDefaultOutput()
+        appendProtectionEvent("roaming check started: reason=\(reason.rawValue), output=\(currentOutput?.name ?? "nil")")
 
         guard roamingProtectionEnabled else {
             lastAudioActionMessage = "Roaming protection is off"
+            appendProtectionEvent("roaming check skipped: disabled")
             logger.info("Roaming Protection skipped because it is disabled. reason=\(reason.rawValue, privacy: .public)")
             return
         }
 
         guard !isSpeakerAllowanceActive else {
             lastAudioActionMessage = "Speakers allowed during roaming check"
+            appendProtectionEvent("roaming check skipped: allowance active until \(speakerAllowanceUntil?.description ?? "nil")")
             logger.info("Roaming Protection skipped because speaker allowance is active. reason=\(reason.rawValue, privacy: .public)")
             return
         }
 
         guard let currentOutput else {
             lastAudioActionMessage = "Roaming check could not detect current output"
+            appendProtectionEvent("roaming check skipped: no current output")
             logger.error("Roaming Protection could not detect current output. reason=\(reason.rawValue, privacy: .public)")
             return
         }
 
         guard currentOutput.isBuiltInSpeaker else {
             lastAudioActionMessage = "Roaming check passed; \(currentOutput.name) allowed"
+            appendProtectionEvent("roaming check passed: \(currentOutput.name) is not built-in speakers")
             logger.info(
                 "Roaming Protection skipped because current output is not built-in speakers. reason=\(reason.rawValue, privacy: .public), output=\(currentOutput.name, privacy: .public)"
             )
@@ -186,9 +200,20 @@ final class SpeakerLockState {
 
         if let currentOutput {
             lastAudioActionMessage = "Detected \(currentOutput.name)"
+            appendProtectionEvent("manual output refresh: \(currentOutput.name), builtInSpeaker=\(currentOutput.isBuiltInSpeaker)")
         } else {
             lastAudioActionMessage = "Could not detect current output"
+            appendProtectionEvent("manual output refresh failed")
         }
+    }
+
+    func copyDiagnosticsToClipboard() {
+        let report = diagnosticsReport()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(report, forType: .string)
+        lastDiagnosticsCopyMessage = "Diagnostics copied"
+        appendProtectionEvent("diagnostics copied to clipboard")
     }
 
     private func handleDefaultOutputChanged(_ output: AudioOutputDevice?) {
@@ -197,16 +222,19 @@ final class SpeakerLockState {
 
         guard let output else {
             lastAudioActionMessage = "Output changed, but no output device was detected"
+            appendProtectionEvent("default output changed to nil")
             logger.error("Default output changed to nil")
             return
         }
 
         lastAudioActionMessage = "Output changed to \(output.name)"
+        appendProtectionEvent("default output changed: \(previousOutput?.name ?? "nil") -> \(output.name), builtInSpeaker=\(output.isBuiltInSpeaker)")
         logger.info(
             "Default output changed from \(previousOutput?.name ?? "none", privacy: .public) to \(output.name, privacy: .public). builtInSpeaker=\(output.isBuiltInSpeaker)"
         )
 
         guard shouldBlockAfterOutputChange(from: previousOutput, to: output) else {
+            appendProtectionEvent("always protection did not block output change")
             return
         }
 
@@ -215,38 +243,46 @@ final class SpeakerLockState {
     }
 
     private func handleNetworkEnvironmentChanged(_ change: NetworkEnvironmentChange) {
+        appendProtectionEvent("network environment trigger received: \(change.trigger.debugDisplayName)")
         logger.info("Network environment trigger: \(String(describing: change.trigger), privacy: .public)")
         handleRoamingRisk(reason: .networkChanged)
     }
 
     private func handleWake() {
+        appendProtectionEvent("wake trigger received")
         logger.info("Wake trigger received")
         handleRoamingRisk(reason: .wake)
     }
 
     private func shouldBlockAfterOutputChange(from previousOutput: AudioOutputDevice?, to output: AudioOutputDevice) -> Bool {
         guard alwaysProtectionEnabled else {
+            appendProtectionEvent("always protection skipped: disabled")
             return false
         }
 
         guard !isSpeakerAllowanceActive else {
             lastAudioActionMessage = "Speakers allowed after output change"
+            appendProtectionEvent("always protection skipped: allowance active")
             logger.info("Always Protection skipped because speaker allowance is active")
             return false
         }
 
-        return output.isBuiltInSpeaker && previousOutput?.isBuiltInSpeaker != true
+        let shouldBlock = output.isBuiltInSpeaker && previousOutput?.isBuiltInSpeaker != true
+        appendProtectionEvent("always protection decision: shouldBlock=\(shouldBlock)")
+        return shouldBlock
     }
 
     private func recheckSpeakerBlockAfterOutputSettles() {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
             guard self.alwaysProtectionEnabled, !self.isSpeakerAllowanceActive else {
+                self.appendProtectionEvent("settled output recheck skipped")
                 return
             }
 
             let refreshedOutput = self.audioOutputController.currentDefaultOutput()
             self.currentOutput = refreshedOutput
+            self.appendProtectionEvent("settled output recheck: \(refreshedOutput?.name ?? "nil"), builtInSpeaker=\(refreshedOutput?.isBuiltInSpeaker == true)")
 
             guard let refreshedOutput, refreshedOutput.isBuiltInSpeaker else {
                 return
@@ -258,21 +294,86 @@ final class SpeakerLockState {
 
     private func blockSpeakers(_ output: AudioOutputDevice, reason: ProtectionReason) {
         lastProtectionReason = reason
+        appendProtectionEvent("blocking speakers: reason=\(reason.rawValue), output=\(output.name)")
 
         if audioOutputController.setMuted(true, for: output) {
             lastAudioActionMessage = "Muted \(output.name)"
+            appendProtectionEvent("block succeeded by mute: \(output.name)")
             logger.info("Blocked speakers by mute. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
             return
         }
 
         if audioOutputController.setVolume(0, for: output) {
             lastAudioActionMessage = "Set \(output.name) volume to 0"
+            appendProtectionEvent("block succeeded by volume 0: \(output.name)")
             logger.info("Blocked speakers by setting volume to 0. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
             return
         }
 
         lastAudioActionMessage = "Could not block \(output.name)"
+        appendProtectionEvent("block failed: \(output.name)")
         logger.error("Failed to block speakers. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
+    }
+
+    private func diagnosticsReport() -> String {
+        let outputLines: [String]
+        if let currentOutput {
+            outputLines = [
+                "Output name: \(currentOutput.name)",
+                "Output id: \(currentOutput.id)",
+                "Output uid: \(currentOutput.uid)",
+                "Output transport: \(currentOutput.transportType.map(String.init) ?? "nil")",
+                "Output dataSourceID: \(currentOutput.dataSourceID.map(String.init) ?? "nil")",
+                "Output terminals: \(currentOutput.outputTerminalTypes.map(String.init).joined(separator: ","))",
+                "Output builtInSpeaker: \(currentOutput.isBuiltInSpeaker)",
+                "Output detection: \(currentOutput.builtInSpeakerDetectionReason)",
+            ]
+        } else {
+            outputLines = ["Output: nil"]
+        }
+
+        return """
+        DontBlastMySound Diagnostics
+        Generated: \(Date())
+
+        App State
+        Always protection: \(alwaysProtectionEnabled)
+        Roaming protection: \(roamingProtectionEnabled)
+        Speaker allowance until: \(speakerAllowanceUntil?.description ?? "nil")
+        Speaker allowance active: \(isSpeakerAllowanceActive)
+        Last protection reason: \(lastProtectionReason?.rawValue ?? "nil")
+        Last audio action: \(lastAudioActionMessage ?? "nil")
+        Status: \(statusText)
+
+        Audio
+        \(outputLines.joined(separator: "\n"))
+
+        Network Debug
+        \(networkDebugState.wifiSummary)
+        \(networkDebugState.wifiIdentitySummary)
+        \(networkDebugState.locationAuthorizationSummary)
+        \(networkDebugState.pathSummary)
+        \(networkDebugState.triggerSummary)
+
+        Recent Protection Events
+        \(recentProtectionEvents.isEmpty ? "none" : recentProtectionEvents.joined(separator: "\n"))
+
+        Recent Network Events
+        \(networkDebugState.recentEvents.isEmpty ? "none" : networkDebugState.recentEvents.joined(separator: "\n"))
+        """
+    }
+
+    private func appendProtectionEvent(_ message: String) {
+        recentProtectionEvents.append("\(Self.timestamp()): \(message)")
+        if recentProtectionEvents.count > 60 {
+            recentProtectionEvents.removeFirst(recentProtectionEvents.count - 60)
+        }
+    }
+
+    private static func timestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter.string(from: Date())
     }
 }
 

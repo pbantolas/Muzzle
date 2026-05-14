@@ -15,6 +15,9 @@ struct SpeakerLockMenu: View {
         if let lastAudioActionMessage = state.lastAudioActionMessage {
             Label(lastAudioActionMessage, systemImage: "waveform")
         }
+        if let lastDiagnosticsCopyMessage = state.lastDiagnosticsCopyMessage {
+            Label(lastDiagnosticsCopyMessage, systemImage: "doc.on.clipboard")
+        }
         if let currentOutput = state.currentOutput {
             Label(currentOutput.builtInSpeakerDetectionReason, systemImage: "info.circle")
         }
@@ -31,6 +34,10 @@ struct SpeakerLockMenu: View {
 
         Button("Refresh Current Output", systemImage: "arrow.clockwise") {
             state.refreshCurrentOutput()
+        }
+
+        Button("Copy Diagnostics", systemImage: "doc.on.doc") {
+            state.copyDiagnosticsToClipboard()
         }
 
         Button("Allow Built-in Speakers for 5 Minutes", systemImage: "speaker.wave.2") {
