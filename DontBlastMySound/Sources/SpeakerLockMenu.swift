@@ -10,8 +10,20 @@ struct SpeakerLockMenu: View {
         Divider()
 
         statusLabel
+        outputLabel
+
+        if let lastAudioActionMessage = state.lastAudioActionMessage {
+            Label(lastAudioActionMessage, systemImage: "waveform")
+        }
+        if let currentOutput = state.currentOutput {
+            Label(currentOutput.builtInSpeakerDetectionReason, systemImage: "info.circle")
+        }
 
         Divider()
+
+        Button("Refresh Current Output", systemImage: "arrow.clockwise") {
+            state.refreshCurrentOutput()
+        }
 
         Button("Allow Built-in Speakers for 5 Minutes", systemImage: "speaker.wave.2") {
             state.allowSpeakers(for: 5 * 60)
@@ -38,6 +50,14 @@ struct SpeakerLockMenu: View {
             Text("Status: \(state.statusText)")
         } icon: {
             Image(systemName: state.menuBarSystemImage)
+        }
+    }
+
+    private var outputLabel: some View {
+        Label {
+            Text("Output: \(state.currentOutput?.name ?? "Unknown")")
+        } icon: {
+            Image(systemName: state.currentOutput?.isBuiltInSpeaker == true ? "speaker" : "headphones")
         }
     }
 }

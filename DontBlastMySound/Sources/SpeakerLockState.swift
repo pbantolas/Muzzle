@@ -1,8 +1,13 @@
 import Foundation
 import Observation
+import OSLog
 
+@MainActor
 @Observable
 final class SpeakerLockState {
+    private let logger = Logger(subsystem: "DontBlastMySound", category: "SpeakerLock")
+    private let audioOutputController = AudioOutputController()
+
     var alwaysProtectionEnabled: Bool {
         didSet {
             UserDefaults.standard.set(alwaysProtectionEnabled, forKey: DefaultsKey.alwaysProtectionEnabled)
@@ -27,6 +32,9 @@ final class SpeakerLockState {
         }
     }
 
+    var currentOutput: AudioOutputDevice?
+    var lastAudioActionMessage: String?
+
     init() {
         alwaysProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
         roamingProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ?? true
@@ -35,6 +43,12 @@ final class SpeakerLockState {
         if let rawReason = UserDefaults.standard.string(forKey: DefaultsKey.lastProtectionReason) {
             lastProtectionReason = ProtectionReason(rawValue: rawReason)
         }
+
+        audioOutputController.onDefaultOutputChanged = { [weak self] output in
+            self?.handleDefaultOutputChanged(output)
+        }
+        audioOutputController.startObservingDefaultOutput()
+        refreshCurrentOutput()
     }
 
     var isSpeakerAllowanceActive: Bool {
@@ -65,6 +79,10 @@ final class SpeakerLockState {
             return "Speakers blocked by \(lastProtectionReason.displayName)"
         }
 
+        if let currentOutput {
+            return "\(currentOutput.name) \(currentOutput.isBuiltInSpeaker ? "detected as built-in speakers" : "allowed")"
+        }
+
         if alwaysProtectionEnabled || roamingProtectionEnabled {
             return "Protection idle"
         }
@@ -87,11 +105,104 @@ final class SpeakerLockState {
     func allowSpeakers(for duration: TimeInterval) {
         speakerAllowanceUntil = Date().addingTimeInterval(duration)
         lastProtectionReason = nil
+        lastAudioActionMessage = "Built-in speakers allowed temporarily"
+        logger.info("Temporary speaker allowance set for \(duration) seconds")
     }
 
     func blockSpeakersNow() {
         speakerAllowanceUntil = nil
-        lastProtectionReason = .manual
+        guard let currentOutput else {
+            lastAudioActionMessage = "No current output device detected"
+            logger.error("Manual block requested, but no output device is known")
+            return
+        }
+
+        guard currentOutput.isBuiltInSpeaker else {
+            lastAudioActionMessage = "\(currentOutput.name) is not detected as built-in speakers"
+            logger.info("Manual block skipped because current output is not built-in speakers: \(currentOutput.name, privacy: .public)")
+            return
+        }
+
+        blockSpeakers(currentOutput, reason: .manual)
+    }
+
+    func refreshCurrentOutput() {
+        currentOutput = audioOutputController.currentDefaultOutput()
+
+        if let currentOutput {
+            lastAudioActionMessage = "Detected \(currentOutput.name)"
+        } else {
+            lastAudioActionMessage = "Could not detect current output"
+        }
+    }
+
+    private func handleDefaultOutputChanged(_ output: AudioOutputDevice?) {
+        let previousOutput = currentOutput
+        currentOutput = output
+
+        guard let output else {
+            lastAudioActionMessage = "Output changed, but no output device was detected"
+            logger.error("Default output changed to nil")
+            return
+        }
+
+        lastAudioActionMessage = "Output changed to \(output.name)"
+        logger.info(
+            "Default output changed from \(previousOutput?.name ?? "none", privacy: .public) to \(output.name, privacy: .public). builtInSpeaker=\(output.isBuiltInSpeaker)"
+        )
+
+        guard alwaysProtectionEnabled else {
+            return
+        }
+
+        let changedIntoBuiltInSpeakers = output.isBuiltInSpeaker && previousOutput?.isBuiltInSpeaker != true
+
+        guard changedIntoBuiltInSpeakers else {
+            return
+        }
+
+        guard !isSpeakerAllowanceActive else {
+            lastAudioActionMessage = "Speakers allowed after output change"
+            logger.info("Always Protection skipped because speaker allowance is active")
+            return
+        }
+
+        blockSpeakers(output, reason: .outputChanged)
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard self.alwaysProtectionEnabled, !self.isSpeakerAllowanceActive else {
+                return
+            }
+
+            let refreshedOutput = self.audioOutputController.currentDefaultOutput()
+            self.currentOutput = refreshedOutput
+
+            guard let refreshedOutput, refreshedOutput.isBuiltInSpeaker else {
+                return
+            }
+
+            self.blockSpeakers(refreshedOutput, reason: .outputChanged)
+        }
+    }
+
+    private func blockSpeakers(_ output: AudioOutputDevice, reason: ProtectionReason) {
+        lastProtectionReason = reason
+
+        if audioOutputController.setMuted(true, for: output) {
+            lastAudioActionMessage = "Muted \(output.name)"
+            logger.info("Blocked speakers by mute. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
+            return
+        }
+
+        if audioOutputController.setVolume(0, for: output) {
+            lastAudioActionMessage = "Set \(output.name) volume to 0"
+            logger.info("Blocked speakers by setting volume to 0. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
+            return
+        }
+
+        lastAudioActionMessage = "Could not block \(output.name)"
+        logger.error("Failed to block speakers. reason=\(reason.rawValue, privacy: .public), output=\(output.name, privacy: .public)")
     }
 }
 
