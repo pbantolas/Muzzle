@@ -151,24 +151,29 @@ final class SpeakerLockState {
             "Default output changed from \(previousOutput?.name ?? "none", privacy: .public) to \(output.name, privacy: .public). builtInSpeaker=\(output.isBuiltInSpeaker)"
         )
 
-        guard alwaysProtectionEnabled else {
+        guard shouldBlockAfterOutputChange(from: previousOutput, to: output) else {
             return
         }
 
-        let changedIntoBuiltInSpeakers = output.isBuiltInSpeaker && previousOutput?.isBuiltInSpeaker != true
+        blockSpeakers(output, reason: .outputChanged)
+        recheckSpeakerBlockAfterOutputSettles()
+    }
 
-        guard changedIntoBuiltInSpeakers else {
-            return
+    private func shouldBlockAfterOutputChange(from previousOutput: AudioOutputDevice?, to output: AudioOutputDevice) -> Bool {
+        guard alwaysProtectionEnabled else {
+            return false
         }
 
         guard !isSpeakerAllowanceActive else {
             lastAudioActionMessage = "Speakers allowed after output change"
             logger.info("Always Protection skipped because speaker allowance is active")
-            return
+            return false
         }
 
-        blockSpeakers(output, reason: .outputChanged)
+        return output.isBuiltInSpeaker && previousOutput?.isBuiltInSpeaker != true
+    }
 
+    private func recheckSpeakerBlockAfterOutputSettles() {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
             guard self.alwaysProtectionEnabled, !self.isSpeakerAllowanceActive else {

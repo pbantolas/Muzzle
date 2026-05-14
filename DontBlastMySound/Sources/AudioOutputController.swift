@@ -135,11 +135,11 @@ final class AudioOutputController {
             return true
         }
 
-        let channelResults = [UInt32(1), UInt32(2)].map { element in
+        let didSetChannelVolume = [UInt32(1), UInt32(2)].contains { element in
             setVolume(clampedVolume, for: device.id, element: element)
         }
 
-        if channelResults.contains(true) {
+        if didSetChannelVolume {
             logger.info("Set channel output volume=\(clampedVolume) for \(device.name, privacy: .public)")
             return true
         }
@@ -358,7 +358,6 @@ final class AudioOutputController {
 
         return streamIDs
     }
-
 }
 
 private let defaultOutputChangedListener: AudioObjectPropertyListenerProc = { _, _, _, context in
