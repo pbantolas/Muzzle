@@ -49,8 +49,9 @@ Protects against opening or using the laptop in a likely new environment.
 Triggers:
 
 - wake from sleep
-- network changed
+- Wi-Fi network identity changed
 - Wi-Fi unavailable or disconnected
+- material network path changed when Wi-Fi identity is unavailable
 
 Policy:
 
@@ -62,6 +63,30 @@ and no temporary speaker allowance is active:
 ```
 
 Roaming Protection may block speakers even if they were already selected, because the risky event is the environment change, not an audio-device transition.
+
+Network-change detection should treat Wi-Fi association as the primary 80/20 environment signal, not raw IP address churn.
+
+Preferred MVP network signal:
+
+```text
+on broad network/path event:
+  read current Wi-Fi identity
+
+  if SSID changed:
+    run roaming protection
+  else if Wi-Fi changed between associated and not associated:
+    run roaming protection
+  else if Wi-Fi identity is unavailable and the material network path changed:
+    run roaming protection
+  else:
+    ignore
+```
+
+SSID is the main signal because it usually represents a different environment. BSSID is useful diagnostic context, but a BSSID-only change should not trigger roaming protection by default. Large office, school, airport, and campus networks commonly use one SSID across many access points, and normal in-building roaming can change BSSID without meaning the user has entered a new environment.
+
+Plain IP address changes are too noisy to use as the primary signal. DHCP renewal, VPN changes, IPv6 churn, captive portals, and sleep/wake transitions can change IP-related state while the user remains in the same place.
+
+On current macOS, SSID and BSSID are location-sensitive. CoreWLAN is still the macOS-native API for Wi-Fi interface state, but SSID/BSSID may be unavailable unless Location Services is enabled and the user has authorized the app. The MVP should handle missing Wi-Fi identity gracefully and fall back to broader Network framework path changes instead of requiring location permission for the basic protection model.
 
 ## Temporary Speaker Allowance
 
@@ -143,7 +168,8 @@ Likely stack:
 - Tuist project later
 - CoreAudio for output device observation and muting
 - AppKit or NSWorkspace notifications for wake/sleep
-- Network/SystemConfiguration APIs for network-change observation
+- Network framework for broad path-change observation
+- CoreWLAN for Wi-Fi identity when Location Services authorization allows it
 - UserDefaults for MVP state
 
 The first useful build should:

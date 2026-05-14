@@ -126,6 +126,43 @@ final class SpeakerLockState {
         blockSpeakers(currentOutput, reason: .manual)
     }
 
+    func handleRoamingRisk(reason: ProtectionReason) {
+        guard reason.isRoamingRisk else {
+            logger.error("Ignoring non-roaming protection reason: \(reason.rawValue, privacy: .public)")
+            return
+        }
+
+        currentOutput = audioOutputController.currentDefaultOutput()
+
+        guard roamingProtectionEnabled else {
+            lastAudioActionMessage = "Roaming protection is off"
+            logger.info("Roaming Protection skipped because it is disabled. reason=\(reason.rawValue, privacy: .public)")
+            return
+        }
+
+        guard !isSpeakerAllowanceActive else {
+            lastAudioActionMessage = "Speakers allowed during roaming check"
+            logger.info("Roaming Protection skipped because speaker allowance is active. reason=\(reason.rawValue, privacy: .public)")
+            return
+        }
+
+        guard let currentOutput else {
+            lastAudioActionMessage = "Roaming check could not detect current output"
+            logger.error("Roaming Protection could not detect current output. reason=\(reason.rawValue, privacy: .public)")
+            return
+        }
+
+        guard currentOutput.isBuiltInSpeaker else {
+            lastAudioActionMessage = "Roaming check passed; \(currentOutput.name) allowed"
+            logger.info(
+                "Roaming Protection skipped because current output is not built-in speakers. reason=\(reason.rawValue, privacy: .public), output=\(currentOutput.name, privacy: .public)"
+            )
+            return
+        }
+
+        blockSpeakers(currentOutput, reason: reason)
+    }
+
     func refreshCurrentOutput() {
         currentOutput = audioOutputController.currentDefaultOutput()
 
@@ -227,6 +264,15 @@ enum ProtectionReason: String {
             "network change"
         case .manual:
             "manual action"
+        }
+    }
+
+    var isRoamingRisk: Bool {
+        switch self {
+        case .wake, .networkChanged:
+            true
+        case .outputChanged, .manual:
+            false
         }
     }
 }
