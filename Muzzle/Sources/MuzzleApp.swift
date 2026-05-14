@@ -16,34 +16,32 @@ struct MuzzleApp: App {
 
     private var renderedMenuBarIcon: Image {
         let renderer = ImageRenderer(
-            content: MenuBarStatusIcon(badgeSystemImage: speakerLock.menuBarBadgeSystemImage)
+            content: MenuBarIcon(isProtectionEnabled: speakerLock.alwaysProtectionEnabled || speakerLock.roamingProtectionEnabled)
         )
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
 
         guard let nsImage = renderer.nsImage else {
-            return Image(systemName: "waveform")
+            return Image("SpeakerLockMenuBarBars").renderingMode(.template)
         }
 
         nsImage.isTemplate = true
+        nsImage.size = NSSize(width: 30, height: 18)
         return Image(nsImage: nsImage)
     }
 }
 
-private struct MenuBarStatusIcon: View {
-    let badgeSystemImage: String?
+private struct MenuBarIcon: View {
+    let isProtectionEnabled: Bool
 
     var body: some View {
-        Image(systemName: "waveform")
-            .font(.system(size: 18, weight: .regular))
-            .overlay(alignment: .bottomTrailing) {
-                if let badgeSystemImage {
-                    Image(systemName: badgeSystemImage)
-                        .foregroundStyle(.red)
-                        .font(.system(size: 10, weight: .bold))
-//                        .alignmentGuide(.bottom) { dimensions in
-//                            dimensions[.bottom] - 1
-//                        }
-                }
-            }
+        ZStack {
+            Image("SpeakerLockMenuBarBars")
+                .renderingMode(.template)
+
+            Image("SpeakerLockMenuBarMuzzle")
+                .renderingMode(.template)
+                .opacity(isProtectionEnabled ? 1 : 0.35)
+        }
+        .frame(width: 30, height: 18)
     }
 }
