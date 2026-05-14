@@ -11,6 +11,7 @@ let project = Project(
             deploymentTargets: .macOS("26.0"),
             infoPlist: .extendingDefault(with: [
                 "LSUIElement": true,
+                "NSLocationWhenInUseUsageDescription": "Speaker Lock uses your current Wi-Fi network name to detect when you may have moved to a new environment.",
             ]),
             buildableFolders: [
                 "DontBlastMySound/Sources",

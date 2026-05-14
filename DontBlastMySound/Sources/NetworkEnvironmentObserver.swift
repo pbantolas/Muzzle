@@ -1,4 +1,5 @@
 import CoreWLAN
+import CoreLocation
 import Foundation
 import Network
 import OSLog
@@ -15,6 +16,76 @@ struct WiFiIdentity: Equatable {
 
     var hasReadableIdentity: Bool {
         ssid != nil || bssid != nil
+    }
+}
+
+struct NetworkEnvironmentDebugState: Equatable {
+    let snapshot: NetworkEnvironmentSnapshot?
+    let lastTrigger: NetworkEnvironmentTrigger?
+    let locationAuthorizationStatus: CLAuthorizationStatus
+
+    var wifiSummary: String {
+        guard let wifiIdentity = snapshot?.wifiIdentity else {
+            return "Wi-Fi: no interface"
+        }
+
+        let interfaceName = wifiIdentity.interfaceName ?? "unknown interface"
+        let powerText = wifiIdentity.isPowerOn ? "on" : "off"
+        let associationText = wifiIdentity.isAssociated ? "associated" : "not associated"
+
+        return "Wi-Fi: \(interfaceName), \(powerText), \(associationText)"
+    }
+
+    var wifiIdentitySummary: String {
+        guard let wifiIdentity = snapshot?.wifiIdentity else {
+            return "Wi-Fi identity: unavailable"
+        }
+
+        let ssid = wifiIdentity.ssid ?? "unreadable"
+        let bssid = wifiIdentity.bssid ?? "unreadable"
+
+        return "SSID: \(ssid), BSSID: \(bssid)"
+    }
+
+    var pathSummary: String {
+        guard let materialPath = snapshot?.materialPath else {
+            return "Network path: unknown"
+        }
+
+        var interfaces: [String] = []
+        if materialPath.usesWiFi {
+            interfaces.append("Wi-Fi")
+        }
+        if materialPath.usesWiredEthernet {
+            interfaces.append("Ethernet")
+        }
+        if materialPath.usesLoopback {
+            interfaces.append("Loopback")
+        }
+
+        let interfaceText = interfaces.isEmpty ? "no tracked interface" : interfaces.joined(separator: ", ")
+        var flags: [String] = []
+        if materialPath.isExpensive {
+            flags.append("expensive")
+        }
+        if materialPath.isConstrained {
+            flags.append("constrained")
+        }
+
+        let flagText = flags.isEmpty ? "" : ", \(flags.joined(separator: ", "))"
+        return "Path: \(materialPath.status.debugDisplayName), \(interfaceText)\(flagText)"
+    }
+
+    var triggerSummary: String {
+        guard let lastTrigger else {
+            return "Network trigger: none"
+        }
+
+        return "Network trigger: \(lastTrigger.debugDisplayName)"
+    }
+
+    var locationAuthorizationSummary: String {
+        "Location: \(locationAuthorizationStatus.debugDisplayName)"
     }
 }
 
@@ -46,6 +117,17 @@ enum NetworkEnvironmentTrigger: Equatable {
     case ssidChanged(previous: String?, current: String?)
     case wifiAssociationChanged(previous: Bool, current: Bool)
     case materialPathChanged
+
+    var debugDisplayName: String {
+        switch self {
+        case let .ssidChanged(previous, current):
+            "SSID changed \(previous ?? "none") -> \(current ?? "none")"
+        case let .wifiAssociationChanged(previous, current):
+            "Wi-Fi association \(previous ? "on" : "off") -> \(current ? "on" : "off")"
+        case .materialPathChanged:
+            "material path changed"
+        }
+    }
 }
 
 final class NetworkEnvironmentObserver {
@@ -53,12 +135,16 @@ final class NetworkEnvironmentObserver {
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "DontBlastMySound.NetworkEnvironmentObserver")
     private let wifiClient = CWWiFiClient.shared()
+    private let locationAuthorizationController = LocationAuthorizationController()
 
     private var lastSnapshot: NetworkEnvironmentSnapshot?
+    private var lastTrigger: NetworkEnvironmentTrigger?
+    private var latestPath: NWPath?
     private var pendingDebounceTask: Task<Void, Never>?
     private var isObserving = false
 
     var onNetworkEnvironmentChanged: (@MainActor (NetworkEnvironmentChange) -> Void)?
+    var onDebugStateChanged: (@MainActor (NetworkEnvironmentDebugState) -> Void)?
 
     deinit {
         stopObserving()
@@ -69,7 +155,13 @@ final class NetworkEnvironmentObserver {
             return
         }
 
+        locationAuthorizationController.onAuthorizationChanged = { [weak self] _ in
+            self?.refreshCurrentSnapshotForDebug()
+        }
+        locationAuthorizationController.requestAuthorizationIfNeeded()
+
         monitor.pathUpdateHandler = { [weak self] path in
+            self?.latestPath = path
             self?.scheduleEnvironmentCheck(for: path)
         }
         monitor.start(queue: queue)
@@ -107,17 +199,21 @@ final class NetworkEnvironmentObserver {
 
         guard let previousSnapshot = lastSnapshot else {
             lastSnapshot = currentSnapshot
+            notifyDebugStateChanged()
             logger.info("Captured initial network environment snapshot")
             return
         }
 
         lastSnapshot = currentSnapshot
+        notifyDebugStateChanged()
 
         guard let trigger = trigger(from: previousSnapshot, to: currentSnapshot) else {
             logger.info("Network path changed without a roaming trigger")
             return
         }
 
+        lastTrigger = trigger
+        notifyDebugStateChanged()
         logger.info("Network environment changed. trigger=\(String(describing: trigger), privacy: .public)")
 
         let change = NetworkEnvironmentChange(
@@ -129,6 +225,16 @@ final class NetworkEnvironmentObserver {
         Task { @MainActor in
             onNetworkEnvironmentChanged?(change)
         }
+    }
+
+    private func refreshCurrentSnapshotForDebug() {
+        guard let latestPath else {
+            notifyDebugStateChanged()
+            return
+        }
+
+        lastSnapshot = snapshot(for: latestPath)
+        notifyDebugStateChanged()
     }
 
     private func snapshot(for path: NWPath) -> NetworkEnvironmentSnapshot {
@@ -191,5 +297,32 @@ final class NetworkEnvironmentObserver {
         }
 
         return .materialPathChanged
+    }
+
+    private func notifyDebugStateChanged() {
+        let debugState = NetworkEnvironmentDebugState(
+            snapshot: lastSnapshot,
+            lastTrigger: lastTrigger,
+            locationAuthorizationStatus: locationAuthorizationController.authorizationStatus
+        )
+
+        Task { @MainActor in
+            onDebugStateChanged?(debugState)
+        }
+    }
+}
+
+private extension NWPath.Status {
+    var debugDisplayName: String {
+        switch self {
+        case .satisfied:
+            "satisfied"
+        case .unsatisfied:
+            "unsatisfied"
+        case .requiresConnection:
+            "requires connection"
+        @unknown default:
+            "unknown"
+        }
     }
 }

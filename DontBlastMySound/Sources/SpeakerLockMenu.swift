@@ -21,6 +21,14 @@ struct SpeakerLockMenu: View {
 
         Divider()
 
+        Label(state.networkDebugState.wifiSummary, systemImage: "wifi")
+        Label(state.networkDebugState.wifiIdentitySummary, systemImage: "location")
+        Label(state.networkDebugState.locationAuthorizationSummary, systemImage: "location.circle")
+        Label(state.networkDebugState.pathSummary, systemImage: "point.3.connected.trianglepath.dotted")
+        Label(state.networkDebugState.triggerSummary, systemImage: "arrow.triangle.branch")
+
+        Divider()
+
         Button("Refresh Current Output", systemImage: "arrow.clockwise") {
             state.refreshCurrentOutput()
         }

@@ -36,6 +36,11 @@ final class SpeakerLockState {
 
     var currentOutput: AudioOutputDevice?
     var lastAudioActionMessage: String?
+    var networkDebugState = NetworkEnvironmentDebugState(
+        snapshot: nil,
+        lastTrigger: nil,
+        locationAuthorizationStatus: .notDetermined
+    )
 
     init() {
         alwaysProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
@@ -51,6 +56,9 @@ final class SpeakerLockState {
         }
         networkEnvironmentObserver.onNetworkEnvironmentChanged = { [weak self] change in
             self?.handleNetworkEnvironmentChanged(change)
+        }
+        networkEnvironmentObserver.onDebugStateChanged = { [weak self] debugState in
+            self?.networkDebugState = debugState
         }
         systemWakeObserver.onWake = { [weak self] in
             self?.handleWake()
