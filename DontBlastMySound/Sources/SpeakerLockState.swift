@@ -8,6 +8,7 @@ final class SpeakerLockState {
     private let logger = Logger(subsystem: "DontBlastMySound", category: "SpeakerLock")
     private let audioOutputController = AudioOutputController()
     private let networkEnvironmentObserver = NetworkEnvironmentObserver()
+    private let systemWakeObserver = SystemWakeObserver()
 
     var alwaysProtectionEnabled: Bool {
         didSet {
@@ -51,8 +52,12 @@ final class SpeakerLockState {
         networkEnvironmentObserver.onNetworkEnvironmentChanged = { [weak self] change in
             self?.handleNetworkEnvironmentChanged(change)
         }
+        systemWakeObserver.onWake = { [weak self] in
+            self?.handleWake()
+        }
         audioOutputController.startObservingDefaultOutput()
         networkEnvironmentObserver.startObserving()
+        systemWakeObserver.startObserving()
         refreshCurrentOutput()
     }
 
@@ -204,6 +209,11 @@ final class SpeakerLockState {
     private func handleNetworkEnvironmentChanged(_ change: NetworkEnvironmentChange) {
         logger.info("Network environment trigger: \(String(describing: change.trigger), privacy: .public)")
         handleRoamingRisk(reason: .networkChanged)
+    }
+
+    private func handleWake() {
+        logger.info("Wake trigger received")
+        handleRoamingRisk(reason: .wake)
     }
 
     private func shouldBlockAfterOutputChange(from previousOutput: AudioOutputDevice?, to output: AudioOutputDevice) -> Bool {
