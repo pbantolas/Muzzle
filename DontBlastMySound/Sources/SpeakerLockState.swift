@@ -7,6 +7,7 @@ import OSLog
 final class SpeakerLockState {
     private let logger = Logger(subsystem: "DontBlastMySound", category: "SpeakerLock")
     private let audioOutputController = AudioOutputController()
+    private let networkEnvironmentObserver = NetworkEnvironmentObserver()
 
     var alwaysProtectionEnabled: Bool {
         didSet {
@@ -47,7 +48,11 @@ final class SpeakerLockState {
         audioOutputController.onDefaultOutputChanged = { [weak self] output in
             self?.handleDefaultOutputChanged(output)
         }
+        networkEnvironmentObserver.onNetworkEnvironmentChanged = { [weak self] change in
+            self?.handleNetworkEnvironmentChanged(change)
+        }
         audioOutputController.startObservingDefaultOutput()
+        networkEnvironmentObserver.startObserving()
         refreshCurrentOutput()
     }
 
@@ -194,6 +199,11 @@ final class SpeakerLockState {
 
         blockSpeakers(output, reason: .outputChanged)
         recheckSpeakerBlockAfterOutputSettles()
+    }
+
+    private func handleNetworkEnvironmentChanged(_ change: NetworkEnvironmentChange) {
+        logger.info("Network environment trigger: \(String(describing: change.trigger), privacy: .public)")
+        handleRoamingRisk(reason: .networkChanged)
     }
 
     private func shouldBlockAfterOutputChange(from previousOutput: AudioOutputDevice?, to output: AudioOutputDevice) -> Bool {
