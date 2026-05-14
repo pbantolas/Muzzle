@@ -8,12 +8,18 @@ struct SpeakerLockMenu: View {
 
         Divider()
 
-        Button("Allow for 5 minutes", systemImage: "speaker.wave.2") {
-            state.allowSpeakers(for: 5 * 60)
+        Button("Pause protection for 5 minutes", systemImage: "pause.circle") {
+            state.pauseProtection(for: 5 * 60)
         }
 
-        Button("Allow for 30 minutes", systemImage: "speaker.wave.2") {
-            state.allowSpeakers(for: 30 * 60)
+        Button("Pause protection for 30 minutes", systemImage: "pause.circle") {
+            state.pauseProtection(for: 30 * 60)
+        }
+
+        if state.isProtectionPauseActive {
+            Button("Resume protection now", systemImage: "play.circle") {
+                state.resumeProtectionNow()
+            }
         }
 
         Divider()
@@ -50,12 +56,6 @@ struct SpeakerLockMenu: View {
         Button("Copy Diagnostics", systemImage: "doc.on.doc") {
             state.copyDiagnosticsToClipboard()
         }
-
-#if DEBUG
-        Button("Block Built-in Speakers Now", systemImage: "speaker.slash") {
-            state.blockSpeakersNow()
-        }
-#endif
 
         Divider()
 

@@ -23,9 +23,10 @@ final class SpeakerLockState {
         }
     }
 
-    var speakerAllowanceUntil: Date? {
+    var protectionPauseUntil: Date? {
         didSet {
-            UserDefaults.standard.set(speakerAllowanceUntil, forKey: DefaultsKey.speakerAllowanceUntil)
+            UserDefaults.standard.set(protectionPauseUntil, forKey: DefaultsKey.protectionPauseUntil)
+            UserDefaults.standard.removeObject(forKey: LegacyDefaultsKey.speakerAllowanceUntil)
         }
     }
 
@@ -48,7 +49,9 @@ final class SpeakerLockState {
     init() {
         alwaysProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
         roamingProtectionEnabled = UserDefaults.standard.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ?? true
-        speakerAllowanceUntil = UserDefaults.standard.object(forKey: DefaultsKey.speakerAllowanceUntil) as? Date
+        protectionPauseUntil =
+            UserDefaults.standard.object(forKey: DefaultsKey.protectionPauseUntil) as? Date ??
+            UserDefaults.standard.object(forKey: LegacyDefaultsKey.speakerAllowanceUntil) as? Date
 
         if let rawReason = UserDefaults.standard.string(forKey: DefaultsKey.lastProtectionReason) {
             lastProtectionReason = ProtectionReason(rawValue: rawReason)
@@ -72,20 +75,20 @@ final class SpeakerLockState {
         refreshCurrentOutput()
     }
 
-    var isSpeakerAllowanceActive: Bool {
-        guard let speakerAllowanceUntil else {
+    var isProtectionPauseActive: Bool {
+        guard let protectionPauseUntil else {
             return false
         }
 
-        return speakerAllowanceUntil > Date()
+        return protectionPauseUntil > Date()
     }
 
-    var allowanceRemainingText: String? {
-        guard let speakerAllowanceUntil, speakerAllowanceUntil > Date() else {
+    var protectionPauseRemainingText: String? {
+        guard let protectionPauseUntil, protectionPauseUntil > Date() else {
             return nil
         }
 
-        let remainingSeconds = Int(speakerAllowanceUntil.timeIntervalSinceNow.rounded(.up))
+        let remainingSeconds = Int(protectionPauseUntil.timeIntervalSinceNow.rounded(.up))
         let minutes = max(1, Int(ceil(Double(remainingSeconds) / 60.0)))
 
         return "\(minutes)m left"
@@ -96,18 +99,18 @@ final class SpeakerLockState {
     }
 
     var statusMenuTitle: String {
-        if let allowanceRemainingText {
-            return "Allowed - built-in speakers for \(allowanceRemainingText)"
-        }
-
-        if let currentOutput, currentOutput.isBuiltInSpeaker, let lastProtectionReason {
-            return "Protected - blocked by \(lastProtectionReason.displayName)"
+        if let protectionPauseRemainingText {
+            return "Protection paused - \(protectionPauseRemainingText)"
         }
 
         if let protectionModeTitle {
             if let currentOutput {
                 if currentOutput.isBuiltInSpeaker {
-                    return "Protected - guarding built-in speakers"
+                    if let lastProtectionReason {
+                        return "Protected - \(lastProtectionReason.displayName)"
+                    }
+
+                    return "Protected - rules active"
                 }
 
                 return "Protected - \(currentOutput.name) connected"
@@ -124,23 +127,15 @@ final class SpeakerLockState {
     }
 
     var statusMenuIcon: String {
-        if isSpeakerAllowanceActive {
-            return "speaker.wave.2.fill"
-        }
-
-        if currentOutput?.isBuiltInSpeaker == true {
-            if lastProtectionReason != nil {
-                return "speaker.slash.fill"
-            }
-
-            return (alwaysProtectionEnabled || roamingProtectionEnabled) ? "exclamationmark.shield.fill" : "speaker.fill"
+        if isProtectionPauseActive {
+            return "waveform.badge.exclamationmark"
         }
 
         if alwaysProtectionEnabled || roamingProtectionEnabled {
-            return "checkmark.shield.fill"
+            return "waveform.badge.checkmark"
         }
 
-        return "speaker"
+        return "waveform"
     }
 
     var networkInfoSummary: String {
@@ -160,12 +155,8 @@ final class SpeakerLockState {
     }
 
     var menuBarBadgeSystemImage: String? {
-        if isSpeakerAllowanceActive {
+        if isProtectionPauseActive {
             return "clock.fill"
-        }
-
-        if let currentOutput, currentOutput.isBuiltInSpeaker, lastProtectionReason != nil {
-            return "lock.fill"
         }
 
         if alwaysProtectionEnabled && roamingProtectionEnabled {
@@ -196,32 +187,19 @@ final class SpeakerLockState {
         }
     }
 
-    func allowSpeakers(for duration: TimeInterval) {
-        speakerAllowanceUntil = Date().addingTimeInterval(duration)
+    func pauseProtection(for duration: TimeInterval) {
+        protectionPauseUntil = Date().addingTimeInterval(duration)
         lastProtectionReason = nil
-        lastAudioActionMessage = "Built-in speakers allowed temporarily"
-        appendProtectionEvent("temporary speaker allowance set for \(Int(duration))s")
-        logger.info("Temporary speaker allowance set for \(duration) seconds")
+        lastAudioActionMessage = "Protection paused temporarily"
+        appendProtectionEvent("protection pause set for \(Int(duration))s")
+        logger.info("Protection pause set for \(duration) seconds")
     }
 
-    func blockSpeakersNow() {
-        speakerAllowanceUntil = nil
-        appendProtectionEvent("manual block requested")
-        guard let currentOutput else {
-            lastAudioActionMessage = "No current output device detected"
-            appendProtectionEvent("manual block skipped: no current output")
-            logger.error("Manual block requested, but no output device is known")
-            return
-        }
-
-        guard currentOutput.isBuiltInSpeaker else {
-            lastAudioActionMessage = "\(currentOutput.name) is not detected as built-in speakers"
-            appendProtectionEvent("manual block skipped: \(currentOutput.name) is not built-in speakers")
-            logger.info("Manual block skipped because current output is not built-in speakers: \(currentOutput.name, privacy: .public)")
-            return
-        }
-
-        blockSpeakers(currentOutput, reason: .manual)
+    func resumeProtectionNow() {
+        protectionPauseUntil = nil
+        lastAudioActionMessage = "Protection resumed"
+        appendProtectionEvent("manual protection pause cleared")
+        logger.info("Manual protection pause cleared; protection resumed")
     }
 
     func handleRoamingRisk(reason: ProtectionReason) {
@@ -241,10 +219,10 @@ final class SpeakerLockState {
             return
         }
 
-        guard !isSpeakerAllowanceActive else {
-            lastAudioActionMessage = "Speakers allowed during roaming check"
-            appendProtectionEvent("roaming check skipped: allowance active until \(speakerAllowanceUntil?.description ?? "nil")")
-            logger.info("Roaming Protection skipped because speaker allowance is active. reason=\(reason.rawValue, privacy: .public)")
+        guard !isProtectionPauseActive else {
+            lastAudioActionMessage = "Protection paused during roaming check"
+            appendProtectionEvent("roaming check skipped: protection pause active until \(protectionPauseUntil?.description ?? "nil")")
+            logger.info("Roaming Protection skipped because protection pause is active. reason=\(reason.rawValue, privacy: .public)")
             return
         }
 
@@ -331,10 +309,10 @@ final class SpeakerLockState {
             return false
         }
 
-        guard !isSpeakerAllowanceActive else {
-            lastAudioActionMessage = "Speakers allowed after output change"
-            appendProtectionEvent("always protection skipped: allowance active")
-            logger.info("Always Protection skipped because speaker allowance is active")
+        guard !isProtectionPauseActive else {
+            lastAudioActionMessage = "Protection paused after output change"
+            appendProtectionEvent("always protection skipped: protection pause active")
+            logger.info("Always Protection skipped because protection pause is active")
             return false
         }
 
@@ -346,7 +324,7 @@ final class SpeakerLockState {
     private func recheckSpeakerBlockAfterOutputSettles() {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
-            guard self.alwaysProtectionEnabled, !self.isSpeakerAllowanceActive else {
+            guard self.alwaysProtectionEnabled, !self.isProtectionPauseActive else {
                 self.appendProtectionEvent("settled output recheck skipped")
                 return
             }
@@ -387,18 +365,18 @@ final class SpeakerLockState {
     }
 
     private func diagnosticsReport() -> String {
-        let allowanceStatus: String
-        if let speakerAllowanceUntil {
-            if isSpeakerAllowanceActive {
-                allowanceStatus = "ACTIVE until \(Self.diagnosticsTimestamp(speakerAllowanceUntil)) (\(allowanceRemainingText ?? "less than 1m left"))"
+        let protectionPauseStatus: String
+        if let protectionPauseUntil {
+            if isProtectionPauseActive {
+                protectionPauseStatus = "ACTIVE until \(Self.diagnosticsTimestamp(protectionPauseUntil)) (\(protectionPauseRemainingText ?? "less than 1m left"))"
             } else {
-                allowanceStatus = "expired at \(Self.diagnosticsTimestamp(speakerAllowanceUntil))"
+                protectionPauseStatus = "expired at \(Self.diagnosticsTimestamp(protectionPauseUntil))"
             }
         } else {
-            allowanceStatus = "none"
+            protectionPauseStatus = "none"
         }
 
-        let protectionDiagnosis = diagnosticsProtectionDiagnosis(allowanceStatus: allowanceStatus)
+        let protectionDiagnosis = diagnosticsProtectionDiagnosis(protectionPauseStatus: protectionPauseStatus)
         let outputLines: [String]
         if let currentOutput {
             outputLines = [
@@ -426,8 +404,8 @@ final class SpeakerLockState {
         App State
         Always protection: \(alwaysProtectionEnabled)
         Roaming protection: \(roamingProtectionEnabled)
-        Speaker allowance: \(allowanceStatus)
-        Speaker allowance active: \(isSpeakerAllowanceActive)
+        Protection pause: \(protectionPauseStatus)
+        Protection pause active: \(isProtectionPauseActive)
         Last protection reason: \(lastProtectionReason?.rawValue ?? "nil")
         Last audio action: \(lastAudioActionMessage ?? "nil")
         Status: \(statusText)
@@ -450,16 +428,16 @@ final class SpeakerLockState {
         """
     }
 
-    private func diagnosticsProtectionDiagnosis(allowanceStatus: String) -> String {
+    private func diagnosticsProtectionDiagnosis(protectionPauseStatus: String) -> String {
         var lines: [String] = []
 
         if !alwaysProtectionEnabled && !roamingProtectionEnabled {
             lines.append("Protections are disabled.")
-        } else if isSpeakerAllowanceActive {
-            lines.append("Temporary speaker allowance is ACTIVE. Built-in speaker blocks are intentionally suppressed.")
-            lines.append("Allowance: \(allowanceStatus)")
+        } else if isProtectionPauseActive {
+            lines.append("Protection pause is ACTIVE. Built-in speaker blocks are intentionally suppressed.")
+            lines.append("Protection pause: \(protectionPauseStatus)")
         } else {
-            lines.append("No active speaker allowance. Built-in speakers should be blocked on matching protection triggers.")
+            lines.append("No active protection pause. Built-in speakers should be blocked on matching protection triggers.")
         }
 
         if let currentOutput {
@@ -529,11 +507,11 @@ enum ProtectionReason: String {
     var displayName: String {
         switch self {
         case .outputChanged:
-            "output change"
+            "headphones disconnected"
         case .wake:
-            "wake"
+            "Mac woke up"
         case .networkChanged:
-            "network change"
+            "Wi-Fi changed"
         case .manual:
             "manual action"
         }
@@ -552,6 +530,10 @@ enum ProtectionReason: String {
 private enum DefaultsKey {
     static let alwaysProtectionEnabled = "alwaysProtectionEnabled"
     static let roamingProtectionEnabled = "roamingProtectionEnabled"
-    static let speakerAllowanceUntil = "speakerAllowanceUntil"
+    static let protectionPauseUntil = "protectionPauseUntil"
     static let lastProtectionReason = "lastProtectionReason"
+}
+
+private enum LegacyDefaultsKey {
+    static let speakerAllowanceUntil = "speakerAllowanceUntil"
 }
