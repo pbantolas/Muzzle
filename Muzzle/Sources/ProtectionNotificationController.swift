@@ -92,7 +92,7 @@ final class ProtectionNotificationController: ProtectionNotifying {
         case .wake:
             return "Built-in speakers were muted after your Mac woke up."
         case .networkChanged:
-            return "Built-in speakers were muted because your location appears to have changed."
+            return "Built-in speakers were muted after a network change."
         case .manual:
             return "Built-in speakers were muted because protection resumed."
         }

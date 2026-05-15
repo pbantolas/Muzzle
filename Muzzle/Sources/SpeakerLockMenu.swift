@@ -25,30 +25,20 @@ struct SpeakerLockMenu: View {
         Divider()
 
         Toggle("Block when headphones disconnect", isOn: $state.alwaysProtectionEnabled)
-        Toggle("Block when changing location", isOn: $state.roamingProtectionEnabled)
+        Toggle("Block after Mac wakes", isOn: $state.wakeProtectionEnabled)
         Toggle("Start at Login", isOn: $state.startAtLoginEnabled)
 
         Divider()
 
-        Menu("Network info") {
-            Label(state.networkInfoSummary, systemImage: "wifi")
-            Label(state.networkDebugState.locationAuthorizationSummary, systemImage: "location.circle")
-
 #if DEBUG
-            Divider()
-            Label(state.networkDebugState.wifiIdentitySummary, systemImage: "network")
-            Label(state.networkDebugState.pathSummary, systemImage: "point.3.connected.trianglepath.dotted")
-            Label(state.networkDebugState.triggerSummary, systemImage: "arrow.triangle.branch")
-
-            if let currentOutput = state.currentOutput {
-                Label(currentOutput.builtInSpeakerDetectionReason, systemImage: "info.circle")
-            }
-
-            if let lastAudioActionMessage = state.lastAudioActionMessage {
-                Label(lastAudioActionMessage, systemImage: "waveform")
-            }
-#endif
+        if let currentOutput = state.currentOutput {
+            Label(currentOutput.builtInSpeakerDetectionReason, systemImage: "info.circle")
         }
+
+        if let lastAudioActionMessage = state.lastAudioActionMessage {
+            Label(lastAudioActionMessage, systemImage: "waveform")
+        }
+#endif
 
         Button("Refresh Status", systemImage: "arrow.clockwise") {
             state.refreshCurrentOutput()

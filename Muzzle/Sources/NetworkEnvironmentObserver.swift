@@ -323,12 +323,12 @@ final class NetworkEnvironmentObserver: NSObject, CWEventDelegate {
         notifyDebugStateChanged()
 
         guard let trigger = trigger(from: previousSnapshot, to: currentSnapshot) else {
-            appendDiagnosticEvent("no roaming trigger")
+            appendDiagnosticEvent("no network environment trigger")
             return
         }
 
         lastTrigger = trigger
-        appendDiagnosticEvent("roaming trigger: \(trigger.debugDisplayName)")
+        appendDiagnosticEvent("network environment trigger: \(trigger.debugDisplayName)")
         notifyDebugStateChanged()
 
         let change = NetworkEnvironmentChange(

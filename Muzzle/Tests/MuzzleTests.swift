@@ -161,18 +161,18 @@ struct NetworkEnvironmentModelTests {
 
 struct ProtectionReasonTests {
     @Test
-    func roamingRiskReasonsAreLimitedToWakeAndNetworkChange() {
-        #expect(ProtectionReason.wake.isRoamingRisk)
-        #expect(ProtectionReason.networkChanged.isRoamingRisk)
-        #expect(!ProtectionReason.outputChanged.isRoamingRisk)
-        #expect(!ProtectionReason.manual.isRoamingRisk)
+    func wakeRiskReasonsAreLimitedToWake() {
+        #expect(ProtectionReason.wake.isWakeRisk)
+        #expect(!ProtectionReason.outputChanged.isWakeRisk)
+        #expect(!ProtectionReason.networkChanged.isWakeRisk)
+        #expect(!ProtectionReason.manual.isWakeRisk)
     }
 
     @Test
     func displayNamesMatchUserFacingStatus() {
         #expect(ProtectionReason.outputChanged.displayName == "headphones disconnected")
         #expect(ProtectionReason.wake.displayName == "Mac woke up")
-        #expect(ProtectionReason.networkChanged.displayName == "Wi-Fi changed")
+        #expect(ProtectionReason.networkChanged.displayName == "network changed")
         #expect(ProtectionReason.manual.displayName == "manual action")
     }
 }
@@ -188,7 +188,7 @@ struct ProtectionNotificationTests {
         #expect(
             ProtectionNotificationController.notificationBody(
                 reason: .networkChanged
-            ) == "Built-in speakers were muted because your location appears to have changed."
+            ) == "Built-in speakers were muted after a network change."
         )
         #expect(
             ProtectionNotificationController.notificationBody(
@@ -300,7 +300,7 @@ struct SpeakerLockStateTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         defaults.set(false, forKey: "alwaysProtectionEnabled")
-        defaults.set(false, forKey: "roamingProtectionEnabled")
+        defaults.set(false, forKey: "wakeProtectionEnabled")
         return DefaultsFixture(defaults: defaults, suiteName: suiteName)
     }
 

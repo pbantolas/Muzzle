@@ -15,7 +15,7 @@ struct MuzzleApp: App {
     }
 
     private var menuBarIconState: MenuBarIconState {
-        guard speakerLock.alwaysProtectionEnabled || speakerLock.roamingProtectionEnabled else {
+        guard speakerLock.alwaysProtectionEnabled || speakerLock.wakeProtectionEnabled else {
             return .off
         }
 

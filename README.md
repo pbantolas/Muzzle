@@ -8,13 +8,12 @@ Your meeting has people.
 
 Your playlist was not on the agenda.
 
-Muzzle is a tiny macOS menu bar app that mutes your built-in speakers during risky moments, like when your headphones disconnect, your Mac wakes up, or you seem to have moved somewhere new.
+Muzzle is a tiny macOS menu bar app that mutes your built-in speakers during risky moments, like when your headphones disconnect or your Mac wakes up.
 
 ## What It Does
 
 - Mutes built-in speakers when headphones disconnect
-- Mutes speakers when your Mac wakes up in a new place
-- Uses Wi-Fi/network changes as a hint that you may have moved
+- Mutes built-in speakers after your Mac wakes up
 - Lets headphones, AirPods, Bluetooth audio, USB audio, and displays keep working normally
 - Lets you pause protection for 5 or 30 minutes
 - Lives quietly in the menu bar

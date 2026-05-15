@@ -14,7 +14,6 @@ let project = Project(
                 "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
                 "LSApplicationCategoryType": "public.app-category.utilities",
                 "LSUIElement": true,
-                "NSLocationWhenInUseUsageDescription": "Speaker Lock uses your current Wi-Fi network name to detect when you may have moved to a new environment.",
             ]),
             buildableFolders: [
                 "Muzzle/Sources",

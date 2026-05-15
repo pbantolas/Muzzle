@@ -9,7 +9,6 @@ final class SpeakerLockState {
     private let logger = Logger(subsystem: "Muzzle", category: "SpeakerLock")
     private let defaults: UserDefaults
     private let audioOutputController = AudioOutputController()
-    private let networkEnvironmentObserver = NetworkEnvironmentObserver()
     private let systemWakeObserver = SystemWakeObserver()
     private let notificationController: ProtectionNotifying
     private let loginItemController: LoginItemControlling
@@ -21,9 +20,9 @@ final class SpeakerLockState {
         }
     }
 
-    var roamingProtectionEnabled: Bool {
+    var wakeProtectionEnabled: Bool {
         didSet {
-            defaults.set(roamingProtectionEnabled, forKey: DefaultsKey.roamingProtectionEnabled)
+            defaults.set(wakeProtectionEnabled, forKey: DefaultsKey.wakeProtectionEnabled)
         }
     }
 
@@ -50,12 +49,6 @@ final class SpeakerLockState {
 
     var currentOutput: AudioOutputDevice?
     var lastAudioActionMessage: String?
-    var networkDebugState = NetworkEnvironmentDebugState(
-        snapshot: nil,
-        lastTrigger: nil,
-        locationAuthorizationStatus: .notDetermined,
-        recentEvents: []
-    )
     private var recentProtectionEvents: [String] = []
 
     init(
@@ -70,7 +63,10 @@ final class SpeakerLockState {
         self.loginItemController = loginItemController ?? LoginItemController()
         let shouldApplyLoginItemPreference = applyLoginItemPreference ?? startObservers
         alwaysProtectionEnabled = defaults.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
-        roamingProtectionEnabled = defaults.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ?? true
+        wakeProtectionEnabled =
+            defaults.object(forKey: DefaultsKey.wakeProtectionEnabled) as? Bool ??
+            defaults.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ??
+            true
         startAtLoginEnabled = defaults.object(forKey: DefaultsKey.startAtLoginEnabled) as? Bool ?? true
         protectionPauseUntil =
             defaults.object(forKey: DefaultsKey.protectionPauseUntil) as? Date ??
@@ -91,17 +87,10 @@ final class SpeakerLockState {
         audioOutputController.onDefaultOutputChanged = { [weak self] output in
             self?.handleDefaultOutputChanged(output)
         }
-        networkEnvironmentObserver.onNetworkEnvironmentChanged = { [weak self] change in
-            self?.handleNetworkEnvironmentChanged(change)
-        }
-        networkEnvironmentObserver.onDebugStateChanged = { [weak self] debugState in
-            self?.networkDebugState = debugState
-        }
         systemWakeObserver.onWake = { [weak self] in
             self?.handleWake()
         }
         audioOutputController.startObservingDefaultOutput()
-        networkEnvironmentObserver.startObserving()
         systemWakeObserver.startObserving()
         applyStartAtLoginPreference()
         refreshCurrentOutput()
@@ -168,31 +157,15 @@ final class SpeakerLockState {
             return "waveform.badge.exclamationmark"
         }
 
-        if alwaysProtectionEnabled || roamingProtectionEnabled {
+        if alwaysProtectionEnabled || wakeProtectionEnabled {
             return "waveform.badge.checkmark"
         }
 
         return "waveform"
     }
 
-    var networkInfoSummary: String {
-        guard let wifiIdentity = networkDebugState.snapshot?.wifiIdentity else {
-            return "No Wi-Fi details"
-        }
-
-        if let ssid = wifiIdentity.ssid {
-            return "Wi-Fi: \(ssid)"
-        }
-
-        if let interfaceName = wifiIdentity.interfaceName {
-            return "Wi-Fi: \(interfaceName)"
-        }
-
-        return "Wi-Fi available"
-    }
-
     var menuBarBadgeSystemImage: String? {
-        guard alwaysProtectionEnabled || roamingProtectionEnabled else {
+        guard alwaysProtectionEnabled || wakeProtectionEnabled else {
             return nil
         }
 
@@ -205,23 +178,25 @@ final class SpeakerLockState {
 
     private func isReasonRelevant(_ reason: ProtectionReason) -> Bool {
         switch reason {
-        case .wake, .networkChanged:
-            return roamingProtectionEnabled
+        case .wake:
+            return wakeProtectionEnabled
+        case .networkChanged:
+            return false
         case .outputChanged:
             return alwaysProtectionEnabled
         case .manual:
-            return alwaysProtectionEnabled || roamingProtectionEnabled
+            return alwaysProtectionEnabled || wakeProtectionEnabled
         }
     }
 
     private var protectionModeTitle: String? {
-        switch (alwaysProtectionEnabled, roamingProtectionEnabled) {
+        switch (alwaysProtectionEnabled, wakeProtectionEnabled) {
         case (true, true):
-            return "headphones and location active"
+            return "headphones and wake active"
         case (true, false):
             return "headphones active"
         case (false, true):
-            return "location active"
+            return "wake active"
         case (false, false):
             return nil
         }
@@ -240,38 +215,38 @@ final class SpeakerLockState {
         appendProtectionEvent("manual protection pause cleared")
     }
 
-    func handleRoamingRisk(reason: ProtectionReason) {
-        guard reason.isRoamingRisk else {
-            appendProtectionEvent("ignored non-roaming reason: \(reason.rawValue)")
-            logger.error("Ignoring non-roaming protection reason: \(reason.rawValue)")
+    func handleWakeRisk(reason: ProtectionReason) {
+        guard reason == .wake else {
+            appendProtectionEvent("ignored non-wake reason: \(reason.rawValue)")
+            logger.error("Ignoring non-wake protection reason: \(reason.rawValue)")
             return
         }
 
         currentOutput = audioOutputController.currentDefaultOutput()
-        appendProtectionEvent("roaming check started: reason=\(reason.rawValue), output=\(currentOutput?.name ?? "nil")")
+        appendProtectionEvent("wake check started: reason=\(reason.rawValue), output=\(currentOutput?.name ?? "nil")")
 
-        guard roamingProtectionEnabled else {
-            lastAudioActionMessage = "Roaming protection is off"
-            appendProtectionEvent("roaming check skipped: disabled")
+        guard wakeProtectionEnabled else {
+            lastAudioActionMessage = "Wake protection is off"
+            appendProtectionEvent("wake check skipped: disabled")
             return
         }
 
         guard !isProtectionPauseActive else {
-            lastAudioActionMessage = "Protection paused during roaming check"
-            appendProtectionEvent("roaming check skipped: protection pause active until \(protectionPauseUntil?.description ?? "nil")")
+            lastAudioActionMessage = "Protection paused during wake check"
+            appendProtectionEvent("wake check skipped: protection pause active until \(protectionPauseUntil?.description ?? "nil")")
             return
         }
 
         guard let currentOutput else {
-            lastAudioActionMessage = "Roaming check could not detect current output"
-            appendProtectionEvent("roaming check skipped: no current output")
-            logger.error("Roaming Protection could not detect current output. reason=\(reason.rawValue)")
+            lastAudioActionMessage = "Wake check could not detect current output"
+            appendProtectionEvent("wake check skipped: no current output")
+            logger.error("Wake protection could not detect current output. reason=\(reason.rawValue)")
             return
         }
 
         guard currentOutput.isBuiltInSpeaker else {
-            lastAudioActionMessage = "Roaming check passed; \(currentOutput.name) allowed"
-            appendProtectionEvent("roaming check passed: \(currentOutput.name) is not built-in speakers")
+            lastAudioActionMessage = "Wake check passed; \(currentOutput.name) allowed"
+            appendProtectionEvent("wake check passed: \(currentOutput.name) is not built-in speakers")
             return
         }
 
@@ -321,14 +296,9 @@ final class SpeakerLockState {
         recheckSpeakerBlockAfterOutputSettles()
     }
 
-    private func handleNetworkEnvironmentChanged(_ change: NetworkEnvironmentChange) {
-        appendProtectionEvent("network environment trigger received: \(change.trigger.debugDisplayName)")
-        handleRoamingRisk(reason: .networkChanged)
-    }
-
     private func handleWake() {
         appendProtectionEvent("wake trigger received")
-        handleRoamingRisk(reason: .wake)
+        handleWakeRisk(reason: .wake)
     }
 
     private func shouldBlockAfterOutputChange(from previousOutput: AudioOutputDevice?, to output: AudioOutputDevice) -> Bool {
@@ -424,7 +394,7 @@ final class SpeakerLockState {
         lastAudioActionMessage = "Protection pause expired"
         appendProtectionEvent("protection pause expired")
 
-        guard alwaysProtectionEnabled || roamingProtectionEnabled else {
+        guard alwaysProtectionEnabled || wakeProtectionEnabled else {
             appendProtectionEvent("expiry recheck skipped: protections disabled")
             return
         }
@@ -502,7 +472,7 @@ final class SpeakerLockState {
 
         App State
         Always protection: \(alwaysProtectionEnabled)
-        Roaming protection: \(roamingProtectionEnabled)
+        Wake protection: \(wakeProtectionEnabled)
         Start at login: \(startAtLoginEnabled)
         Protection pause: \(protectionPauseStatus)
         Protection pause active: \(isProtectionPauseActive)
@@ -513,25 +483,15 @@ final class SpeakerLockState {
         Audio
         \(outputLines.joined(separator: "\n"))
 
-        Network Debug
-        \(networkDebugState.wifiSummary)
-        \(networkDebugState.wifiIdentitySummary)
-        \(networkDebugState.locationAuthorizationSummary)
-        \(networkDebugState.pathSummary)
-        \(networkDebugState.triggerSummary)
-
         Recent Protection Events
         \(recentProtectionEvents.isEmpty ? "none" : recentProtectionEvents.joined(separator: "\n"))
-
-        Recent Network Events
-        \(networkDebugState.recentEvents.isEmpty ? "none" : networkDebugState.recentEvents.joined(separator: "\n"))
         """
     }
 
     private func diagnosticsProtectionDiagnosis(protectionPauseStatus: String) -> String {
         var lines: [String] = []
 
-        if !alwaysProtectionEnabled && !roamingProtectionEnabled {
+        if !alwaysProtectionEnabled && !wakeProtectionEnabled {
             lines.append("Protections are disabled.")
         } else if isProtectionPauseActive {
             lines.append("Protection pause is ACTIVE. Built-in speaker blocks are intentionally suppressed.")
@@ -550,12 +510,6 @@ final class SpeakerLockState {
             lines.append("Last protection event: \(lastProtectionEvent)")
         } else {
             lines.append("Last protection event: none")
-        }
-
-        if let lastNetworkEvent = networkDebugState.recentEvents.last {
-            lines.append("Last network event: \(lastNetworkEvent)")
-        } else {
-            lines.append("Last network event: none")
         }
 
         return lines.joined(separator: "\n")
@@ -611,17 +565,17 @@ enum ProtectionReason: String {
         case .wake:
             "Mac woke up"
         case .networkChanged:
-            "Wi-Fi changed"
+            "network changed"
         case .manual:
             "manual action"
         }
     }
 
-    var isRoamingRisk: Bool {
+    var isWakeRisk: Bool {
         switch self {
-        case .wake, .networkChanged:
+        case .wake:
             true
-        case .outputChanged, .manual:
+        case .outputChanged, .networkChanged, .manual:
             false
         }
     }
@@ -629,6 +583,7 @@ enum ProtectionReason: String {
 
 private enum DefaultsKey {
     static let alwaysProtectionEnabled = "alwaysProtectionEnabled"
+    static let wakeProtectionEnabled = "wakeProtectionEnabled"
     static let roamingProtectionEnabled = "roamingProtectionEnabled"
     static let startAtLoginEnabled = "startAtLoginEnabled"
     static let protectionPauseUntil = "protectionPauseUntil"

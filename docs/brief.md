@@ -6,7 +6,6 @@ When using a Mac in public or shared spaces, audio can unexpectedly play through
 
 - headphones, AirPods, or another external output disconnects and macOS falls back to speakers
 - the laptop wakes in a public place with speakers already selected
-- the network environment changes, suggesting the user may have moved locations
 
 This is not the same as mute. Mute relies on the user remembering to set it. The app should enforce a temporary safety policy around built-in speakers.
 
@@ -42,51 +41,26 @@ and no temporary speaker allowance is active:
 
 This means that if the Mac was already using built-in speakers, Always Protection does not immediately block them. It only reacts to a transition into speakers.
 
-### Roaming Protection
+### Wake Protection
 
-Protects against opening or using the laptop in a likely new environment.
+Protects against opening the laptop with built-in speakers already selected.
 
-Triggers:
+Trigger:
 
 - wake from sleep
-- Wi-Fi network identity changed
-- Wi-Fi unavailable or disconnected
-- material network path changed when Wi-Fi identity is unavailable
 
 Policy:
 
 ```text
-if roaming protection is enabled
+if wake protection is enabled
 and current output is built-in speakers
 and no temporary speaker allowance is active:
   mute/block built-in speakers
 ```
 
-Roaming Protection may block speakers even if they were already selected, because the risky event is the environment change, not an audio-device transition.
+Wake Protection may block speakers even if they were already selected, because the risky event is the Mac waking up, not an audio-device transition.
 
-Network-change detection should treat Wi-Fi association as the primary 80/20 environment signal, not raw IP address churn.
-
-Preferred MVP network signal:
-
-```text
-on broad network/path event:
-  read current Wi-Fi identity
-
-  if SSID changed:
-    run roaming protection
-  else if Wi-Fi changed between associated and not associated:
-    run roaming protection
-  else if Wi-Fi identity is unavailable and the material network path changed:
-    run roaming protection
-  else:
-    ignore
-```
-
-SSID is the main signal because it usually represents a different environment. BSSID is useful diagnostic context, but a BSSID-only change should not trigger roaming protection by default. Large office, school, airport, and campus networks commonly use one SSID across many access points, and normal in-building roaming can change BSSID without meaning the user has entered a new environment.
-
-Plain IP address changes are too noisy to use as the primary signal. DHCP renewal, VPN changes, IPv6 churn, captive portals, and sleep/wake transitions can change IP-related state while the user remains in the same place.
-
-On current macOS, SSID and BSSID are location-sensitive. CoreWLAN is still the macOS-native API for Wi-Fi interface state, but SSID/BSSID may be unavailable unless Location Services is enabled and the user has authorized the app. The MVP should handle missing Wi-Fi identity gracefully and fall back to broader Network framework path changes instead of requiring location permission for the basic protection model.
+Wi-Fi and network environment detection are intentionally not active in the core app. They were too noisy as a proxy for movement and required location-sensitive Wi-Fi APIs.
 
 ## Temporary Speaker Allowance
 
@@ -108,7 +82,7 @@ Initial menu:
 Speaker Lock
 
 [x] Always protect on output changes
-[x] Roaming protection
+[x] Wake protection
 
 Status: Speakers blocked
 
@@ -135,10 +109,10 @@ Persist:
 
 ```text
 alwaysProtectionEnabled: Bool
-roamingProtectionEnabled: Bool
+wakeProtectionEnabled: Bool
 speakerAllowanceUntil: Date?
 lastKnownOutputDeviceID: AudioDeviceID?
-lastProtectionReason: outputChanged | wake | networkChanged | manual
+lastProtectionReason: outputChanged | wake | manual
 ```
 
 ## Out Of Scope
@@ -168,8 +142,6 @@ Likely stack:
 - Tuist project later
 - CoreAudio for output device observation and muting
 - AppKit or NSWorkspace notifications for wake/sleep
-- Network framework for broad path-change observation
-- CoreWLAN for Wi-Fi identity when Location Services authorization allows it
 - UserDefaults for MVP state
 
 The first useful build should:
@@ -178,5 +150,5 @@ The first useful build should:
 2. observe default audio output changes
 3. identify the built-in speakers
 4. mute/block when Always Protection sees a transition into speakers
-5. mute/block when Roaming Protection fires while speakers are selected
+5. mute/block when Wake Protection fires while speakers are selected
 6. support 5-minute and 30-minute temporary speaker allowances
