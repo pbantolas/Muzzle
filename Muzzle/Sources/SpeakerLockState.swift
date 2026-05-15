@@ -11,6 +11,7 @@ final class SpeakerLockState {
     private let audioOutputController = AudioOutputController()
     private let networkEnvironmentObserver = NetworkEnvironmentObserver()
     private let systemWakeObserver = SystemWakeObserver()
+    private let notificationController: ProtectionNotifying
     @ObservationIgnored private var protectionPauseExpiryTask: Task<Void, Never>?
 
     var alwaysProtectionEnabled: Bool {
@@ -49,8 +50,13 @@ final class SpeakerLockState {
     )
     private var recentProtectionEvents: [String] = []
 
-    init(defaults: UserDefaults = .standard, startObservers: Bool = true) {
+    init(
+        defaults: UserDefaults = .standard,
+        startObservers: Bool = true,
+        notificationController: ProtectionNotifying? = nil
+    ) {
         self.defaults = defaults
+        self.notificationController = notificationController ?? ProtectionNotificationController()
         alwaysProtectionEnabled = defaults.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
         roamingProtectionEnabled = defaults.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ?? true
         protectionPauseUntil =
@@ -409,12 +415,14 @@ final class SpeakerLockState {
         if audioOutputController.setMuted(true, for: output) {
             lastAudioActionMessage = "Muted \(output.name)"
             appendProtectionEvent("block succeeded by mute: \(output.name)")
+            notificationController.notifySpeakersBlocked(reason: reason)
             return
         }
 
         if audioOutputController.setVolume(0, for: output) {
             lastAudioActionMessage = "Set \(output.name) volume to 0"
             appendProtectionEvent("block succeeded by volume 0: \(output.name)")
+            notificationController.notifySpeakersBlocked(reason: reason)
             return
         }
 

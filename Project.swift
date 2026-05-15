@@ -22,6 +22,7 @@ let project = Project(
             ],
             dependencies: [],
             settings: .settings(base: [
+                "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
                 "ENABLE_HARDENED_RUNTIME": "YES",
                 "MARKETING_VERSION": "0.1.1",
                 "CURRENT_PROJECT_VERSION": "2",

@@ -177,6 +177,32 @@ struct ProtectionReasonTests {
     }
 }
 
+struct ProtectionNotificationTests {
+    @Test
+    func notificationCopyMatchesProtectionReasons() {
+        #expect(
+            ProtectionNotificationController.notificationBody(
+                reason: .outputChanged
+            ) == "Built-in speakers were muted because your headphones disconnected."
+        )
+        #expect(
+            ProtectionNotificationController.notificationBody(
+                reason: .networkChanged
+            ) == "Built-in speakers were muted because your location appears to have changed."
+        )
+        #expect(
+            ProtectionNotificationController.notificationBody(
+                reason: .wake
+            ) == "Built-in speakers were muted after your Mac woke up."
+        )
+        #expect(
+            ProtectionNotificationController.notificationBody(
+                reason: .manual
+            ) == "Built-in speakers were muted because protection resumed."
+        )
+    }
+}
+
 @MainActor
 struct SpeakerLockStateTests {
     @Test
