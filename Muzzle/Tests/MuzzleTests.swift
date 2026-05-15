@@ -257,6 +257,44 @@ struct SpeakerLockStateTests {
         #expect(state.isProtectionPauseActive)
     }
 
+    @Test
+    func startAtLoginDefaultsOnAndRegistersLoginItem() throws {
+        let fixture = try makeDefaults()
+        defer { fixture.tearDown() }
+        let loginItemController = FakeLoginItemController(isEnabled: false)
+
+        let state = SpeakerLockState(
+            defaults: fixture.defaults,
+            startObservers: false,
+            loginItemController: loginItemController,
+            applyLoginItemPreference: true
+        )
+
+        #expect(state.startAtLoginEnabled)
+        #expect(loginItemController.isEnabled)
+        #expect(loginItemController.setRequests == [true])
+    }
+
+    @Test
+    func startAtLoginTogglePersistsAndUnregistersLoginItem() throws {
+        let fixture = try makeDefaults()
+        defer { fixture.tearDown() }
+        fixture.defaults.set(true, forKey: "startAtLoginEnabled")
+        let loginItemController = FakeLoginItemController(isEnabled: true)
+        let state = SpeakerLockState(
+            defaults: fixture.defaults,
+            startObservers: false,
+            loginItemController: loginItemController,
+            applyLoginItemPreference: true
+        )
+
+        state.startAtLoginEnabled = false
+
+        #expect(!fixture.defaults.bool(forKey: "startAtLoginEnabled"))
+        #expect(!loginItemController.isEnabled)
+        #expect(loginItemController.setRequests == [false])
+    }
+
     private func makeDefaults() throws -> DefaultsFixture {
         let suiteName = "MuzzleTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -272,6 +310,20 @@ struct SpeakerLockStateTests {
 
         func tearDown() {
             defaults.removePersistentDomain(forName: suiteName)
+        }
+    }
+
+    private final class FakeLoginItemController: LoginItemControlling {
+        var isEnabled: Bool
+        var setRequests: [Bool] = []
+
+        init(isEnabled: Bool) {
+            self.isEnabled = isEnabled
+        }
+
+        func setEnabled(_ isEnabled: Bool) throws {
+            setRequests.append(isEnabled)
+            self.isEnabled = isEnabled
         }
     }
 }

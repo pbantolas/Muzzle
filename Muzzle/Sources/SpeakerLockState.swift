@@ -12,6 +12,7 @@ final class SpeakerLockState {
     private let networkEnvironmentObserver = NetworkEnvironmentObserver()
     private let systemWakeObserver = SystemWakeObserver()
     private let notificationController: ProtectionNotifying
+    private let loginItemController: LoginItemControlling
     @ObservationIgnored private var protectionPauseExpiryTask: Task<Void, Never>?
 
     var alwaysProtectionEnabled: Bool {
@@ -23,6 +24,13 @@ final class SpeakerLockState {
     var roamingProtectionEnabled: Bool {
         didSet {
             defaults.set(roamingProtectionEnabled, forKey: DefaultsKey.roamingProtectionEnabled)
+        }
+    }
+
+    var startAtLoginEnabled: Bool {
+        didSet {
+            defaults.set(startAtLoginEnabled, forKey: DefaultsKey.startAtLoginEnabled)
+            applyStartAtLoginPreference()
         }
     }
 
@@ -53,12 +61,17 @@ final class SpeakerLockState {
     init(
         defaults: UserDefaults = .standard,
         startObservers: Bool = true,
-        notificationController: ProtectionNotifying? = nil
+        notificationController: ProtectionNotifying? = nil,
+        loginItemController: LoginItemControlling? = nil,
+        applyLoginItemPreference: Bool? = nil
     ) {
         self.defaults = defaults
         self.notificationController = notificationController ?? ProtectionNotificationController()
+        self.loginItemController = loginItemController ?? LoginItemController()
+        let shouldApplyLoginItemPreference = applyLoginItemPreference ?? startObservers
         alwaysProtectionEnabled = defaults.object(forKey: DefaultsKey.alwaysProtectionEnabled) as? Bool ?? true
         roamingProtectionEnabled = defaults.object(forKey: DefaultsKey.roamingProtectionEnabled) as? Bool ?? true
+        startAtLoginEnabled = defaults.object(forKey: DefaultsKey.startAtLoginEnabled) as? Bool ?? true
         protectionPauseUntil =
             defaults.object(forKey: DefaultsKey.protectionPauseUntil) as? Date ??
             defaults.object(forKey: LegacyDefaultsKey.speakerAllowanceUntil) as? Date
@@ -68,6 +81,9 @@ final class SpeakerLockState {
         }
 
         guard startObservers else {
+            if shouldApplyLoginItemPreference {
+                applyStartAtLoginPreference()
+            }
             scheduleProtectionPauseExpiry()
             return
         }
@@ -87,6 +103,7 @@ final class SpeakerLockState {
         audioOutputController.startObservingDefaultOutput()
         networkEnvironmentObserver.startObserving()
         systemWakeObserver.startObserving()
+        applyStartAtLoginPreference()
         refreshCurrentOutput()
         scheduleProtectionPauseExpiry()
     }
@@ -351,6 +368,21 @@ final class SpeakerLockState {
         }
     }
 
+    private func applyStartAtLoginPreference() {
+        guard loginItemController.isEnabled != startAtLoginEnabled else {
+            return
+        }
+
+        do {
+            try loginItemController.setEnabled(startAtLoginEnabled)
+            appendProtectionEvent("start at login \(startAtLoginEnabled ? "enabled" : "disabled")")
+        } catch {
+            lastAudioActionMessage = "Could not update start at login"
+            appendProtectionEvent("start at login update failed: \(error.localizedDescription)")
+            logger.error("Failed to update start at login. enabled=\(self.startAtLoginEnabled), error=\(error.localizedDescription)")
+        }
+    }
+
     private func scheduleProtectionPauseExpiry() {
         protectionPauseExpiryTask?.cancel()
         protectionPauseExpiryTask = nil
@@ -471,6 +503,7 @@ final class SpeakerLockState {
         App State
         Always protection: \(alwaysProtectionEnabled)
         Roaming protection: \(roamingProtectionEnabled)
+        Start at login: \(startAtLoginEnabled)
         Protection pause: \(protectionPauseStatus)
         Protection pause active: \(isProtectionPauseActive)
         Last protection reason: \(lastProtectionReason?.rawValue ?? "nil")
@@ -597,6 +630,7 @@ enum ProtectionReason: String {
 private enum DefaultsKey {
     static let alwaysProtectionEnabled = "alwaysProtectionEnabled"
     static let roamingProtectionEnabled = "roamingProtectionEnabled"
+    static let startAtLoginEnabled = "startAtLoginEnabled"
     static let protectionPauseUntil = "protectionPauseUntil"
     static let lastProtectionReason = "lastProtectionReason"
 }
