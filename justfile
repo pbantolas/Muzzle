@@ -2,7 +2,9 @@
 
 tuist := "tuist"
 scheme := "Muzzle"
+dev_bundle_id := "dev.bantolas.Muzzle.Dev"
 release_dir := "build/release"
+dev_derived_data := "build/dev-derived"
 archive_path := release_dir + "/" + scheme + ".xcarchive"
 export_path := release_dir + "/export"
 app_path := export_path + "/" + scheme + ".app"
@@ -72,3 +74,40 @@ test:
 # Build and launch the app
 run:
     {{tuist}} run {{scheme}}
+
+# Build, install, and launch a stable signed development app.
+dev-run:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    : "${APPLE_TEAM_ID:?Set APPLE_TEAM_ID to your Apple Developer Team ID.}"
+
+    app_path="${MUZZLE_DEV_APP_PATH:-$HOME/Applications/Muzzle Dev.app}"
+    built_app="{{dev_derived_data}}/Build/Products/Debug/{{scheme}}.app"
+    build_log="$(mktemp)"
+    trap 'rm -f "$build_log"' EXIT
+
+    {{tuist}} generate --no-open >/dev/null
+
+    if ! xcodebuild \
+        -quiet \
+        -workspace {{scheme}}.xcworkspace \
+        -scheme {{scheme}} \
+        -configuration Debug \
+        -derivedDataPath {{dev_derived_data}} \
+        PRODUCT_BUNDLE_IDENTIFIER={{dev_bundle_id}} \
+        DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+        CODE_SIGN_STYLE=Manual \
+        CODE_SIGN_IDENTITY="Developer ID Application" \
+        PROVISIONING_PROFILE_SPECIFIER="" \
+        build > "$build_log" 2>&1; then
+        cat "$build_log" >&2
+        exit 1
+    fi
+
+    pkill -x "{{scheme}}" >/dev/null 2>&1 || true
+    mkdir -p "$(dirname "$app_path")"
+    rm -rf "$app_path"
+    ditto "$built_app" "$app_path"
+    open "$app_path"
+    echo "$app_path"
