@@ -5,6 +5,10 @@ scheme := "Muzzle"
 
 default: generate
 
+# Print the current app version
+version:
+    @cat VERSION
+
 # Generate Xcode project from Tuist manifests
 generate:
     {{tuist}} generate --no-open
