@@ -26,6 +26,7 @@ struct SpeakerLockMenu: View {
 
         Toggle("Block when headphones disconnect", isOn: $state.alwaysProtectionEnabled)
         Toggle("Block when changing location", isOn: $state.roamingProtectionEnabled)
+        Toggle("Start at Login", isOn: $state.startAtLoginEnabled)
 
         Divider()
 
