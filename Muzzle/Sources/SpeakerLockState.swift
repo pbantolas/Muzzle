@@ -120,7 +120,7 @@ final class SpeakerLockState {
         if let protectionModeTitle {
             if let currentOutput {
                 if currentOutput.isBuiltInSpeaker {
-                    if let lastProtectionReason {
+                    if let lastProtectionReason, isReasonRelevant(lastProtectionReason) {
                         return "Protected - \(lastProtectionReason.displayName)"
                     }
 
@@ -178,6 +178,17 @@ final class SpeakerLockState {
         }
 
         return "checkmark.shield.fill"
+    }
+
+    private func isReasonRelevant(_ reason: ProtectionReason) -> Bool {
+        switch reason {
+        case .wake, .networkChanged:
+            return roamingProtectionEnabled
+        case .outputChanged:
+            return alwaysProtectionEnabled
+        case .manual:
+            return alwaysProtectionEnabled || roamingProtectionEnabled
+        }
     }
 
     private var protectionModeTitle: String? {

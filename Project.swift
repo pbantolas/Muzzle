@@ -23,8 +23,8 @@ let project = Project(
             dependencies: [],
             settings: .settings(base: [
                 "ENABLE_HARDENED_RUNTIME": "YES",
-                "MARKETING_VERSION": "0.1.0",
-                "CURRENT_PROJECT_VERSION": "1",
+                "MARKETING_VERSION": "0.1.1",
+                "CURRENT_PROJECT_VERSION": "2",
             ])
         ),
         .target(
