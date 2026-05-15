@@ -12,6 +12,7 @@ let project = Project(
             infoPlist: .extendingDefault(with: [
                 "CFBundleShortVersionString": "$(MARKETING_VERSION)",
                 "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
+                "LSApplicationCategoryType": "public.app-category.utilities",
                 "LSUIElement": true,
                 "NSLocationWhenInUseUsageDescription": "Speaker Lock uses your current Wi-Fi network name to detect when you may have moved to a new environment.",
             ]),
@@ -21,6 +22,7 @@ let project = Project(
             ],
             dependencies: [],
             settings: .settings(base: [
+                "ENABLE_HARDENED_RUNTIME": "YES",
                 "MARKETING_VERSION": "0.1.0",
                 "CURRENT_PROJECT_VERSION": "1",
             ])
