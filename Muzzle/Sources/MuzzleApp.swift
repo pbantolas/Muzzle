@@ -5,18 +5,6 @@ import SwiftUI
 struct MuzzleApp: App {
     @State private var speakerLock = SpeakerLockState()
 
-    init() {
-#if DEBUG
-        if ProcessInfo.processInfo.environment["MUZZLE_SHOW_TEST_NOTIFICATION_ON_LAUNCH"] == "1" {
-            Task { @MainActor in
-                ProtectionNotificationController().notifySpeakersBlocked(
-                    reason: .outputChanged
-                )
-            }
-        }
-#endif
-    }
-
     var body: some Scene {
         MenuBarExtra {
             SpeakerLockMenu(state: speakerLock)
