@@ -1,5 +1,7 @@
 # Muzzle
 
+![Muzzle banner](docs/assets/readme-banner.png)
+
 Your Mac has speakers.
 
 Your meeting has people.
