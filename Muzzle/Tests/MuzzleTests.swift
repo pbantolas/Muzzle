@@ -295,6 +295,52 @@ struct SpeakerLockStateTests {
         #expect(loginItemController.setRequests == [false])
     }
 
+    @Test
+    func wakeProtectionNotifiesWhenSpeakersWereAudible() throws {
+        let fixture = try makeDefaults()
+        defer { fixture.tearDown() }
+        fixture.defaults.set(true, forKey: "wakeProtectionEnabled")
+        let audioOutputController = FakeAudioOutputController()
+        audioOutputController.currentOutput = Self.builtInSpeakerOutput()
+        audioOutputController.hasPotentiallyAudibleOutput = true
+        let notificationController = FakeProtectionNotificationController()
+        let state = SpeakerLockState(
+            defaults: fixture.defaults,
+            startObservers: false,
+            audioOutputController: audioOutputController,
+            notificationController: notificationController
+        )
+
+        state.currentOutput = audioOutputController.currentOutput
+        state.handleWakeRisk(reason: .wake)
+
+        #expect(audioOutputController.muteRequests == [true])
+        #expect(notificationController.reasons == [.wake])
+    }
+
+    @Test
+    func wakeProtectionSkipsNotificationWhenSpeakersWereAlreadyBlocked() throws {
+        let fixture = try makeDefaults()
+        defer { fixture.tearDown() }
+        fixture.defaults.set(true, forKey: "wakeProtectionEnabled")
+        let audioOutputController = FakeAudioOutputController()
+        audioOutputController.currentOutput = Self.builtInSpeakerOutput()
+        audioOutputController.hasPotentiallyAudibleOutput = false
+        let notificationController = FakeProtectionNotificationController()
+        let state = SpeakerLockState(
+            defaults: fixture.defaults,
+            startObservers: false,
+            audioOutputController: audioOutputController,
+            notificationController: notificationController
+        )
+
+        state.currentOutput = audioOutputController.currentOutput
+        state.handleWakeRisk(reason: .wake)
+
+        #expect(audioOutputController.muteRequests == [true])
+        #expect(notificationController.reasons.isEmpty)
+    }
+
     private func makeDefaults() throws -> DefaultsFixture {
         let suiteName = "MuzzleTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -310,6 +356,53 @@ struct SpeakerLockStateTests {
 
         func tearDown() {
             defaults.removePersistentDomain(forName: suiteName)
+        }
+    }
+
+    private static func builtInSpeakerOutput() -> AudioOutputDevice {
+        AudioOutputDevice(
+            id: 1,
+            name: "MacBook Pro Speakers",
+            uid: "built-in-speakers",
+            transportType: kAudioDeviceTransportTypeBuiltIn,
+            dataSourceID: nil,
+            outputTerminalTypes: [kAudioStreamTerminalTypeSpeaker]
+        )
+    }
+
+    private final class FakeAudioOutputController: AudioOutputControlling {
+        var onDefaultOutputChanged: (@MainActor (AudioOutputDevice?) -> Void)?
+        var currentOutput: AudioOutputDevice?
+        var hasPotentiallyAudibleOutput = true
+        var muteRequests: [Bool] = []
+        var volumeRequests: [Float32] = []
+
+        func currentDefaultOutput() -> AudioOutputDevice? {
+            currentOutput
+        }
+
+        func setMuted(_ isMuted: Bool, for device: AudioOutputDevice) -> Bool {
+            muteRequests.append(isMuted)
+            return true
+        }
+
+        func setVolume(_ volume: Float32, for device: AudioOutputDevice) -> Bool {
+            volumeRequests.append(volume)
+            return true
+        }
+
+        func hasPotentiallyAudibleOutput(_ device: AudioOutputDevice) -> Bool {
+            hasPotentiallyAudibleOutput
+        }
+
+        func startObservingDefaultOutput() {}
+    }
+
+    private final class FakeProtectionNotificationController: ProtectionNotifying {
+        var reasons: [ProtectionReason] = []
+
+        func notifySpeakersBlocked(reason: ProtectionReason) {
+            reasons.append(reason)
         }
     }
 

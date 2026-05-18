@@ -47,7 +47,17 @@ struct AudioOutputDevice: Equatable {
     }
 }
 
-final class AudioOutputController {
+protocol AudioOutputControlling: AnyObject {
+    var onDefaultOutputChanged: (@MainActor (AudioOutputDevice?) -> Void)? { get set }
+
+    func currentDefaultOutput() -> AudioOutputDevice?
+    func setMuted(_ isMuted: Bool, for device: AudioOutputDevice) -> Bool
+    func setVolume(_ volume: Float32, for device: AudioOutputDevice) -> Bool
+    func hasPotentiallyAudibleOutput(_ device: AudioOutputDevice) -> Bool
+    func startObservingDefaultOutput()
+}
+
+final class AudioOutputController: AudioOutputControlling {
     private let logger = Logger(subsystem: "Muzzle", category: "AudioOutput")
     private var isObservingDefaultOutput = false
 
@@ -141,6 +151,18 @@ final class AudioOutputController {
         return false
     }
 
+    func hasPotentiallyAudibleOutput(_ device: AudioOutputDevice) -> Bool {
+        if let isMuted = isMuted(device) {
+            guard !isMuted else {
+                return false
+            }
+
+            return outputVolume(for: device).map { $0 > 0 } ?? true
+        }
+
+        return outputVolume(for: device).map { $0 > 0 } ?? false
+    }
+
     func startObservingDefaultOutput() {
         guard !isObservingDefaultOutput else {
             return
@@ -208,6 +230,64 @@ final class AudioOutputController {
         )
 
         return AudioObjectHasProperty(deviceID, &address)
+    }
+
+    private func isMuted(_ device: AudioOutputDevice) -> Bool? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        guard AudioObjectHasProperty(device.id, &address) else {
+            return nil
+        }
+
+        var dataSize = UInt32(MemoryLayout<UInt32>.size)
+        var value: UInt32 = 0
+        let status = AudioObjectGetPropertyData(device.id, &address, 0, nil, &dataSize, &value)
+
+        guard status == noErr else {
+            logger.error("Failed to read mute state for \(device.name). status=\(status)")
+            return nil
+        }
+
+        return value != 0
+    }
+
+    private func outputVolume(for device: AudioOutputDevice) -> Float32? {
+        if let mainVolume = volume(for: device.id, element: kAudioObjectPropertyElementMain) {
+            return mainVolume
+        }
+
+        let channelVolumes = [UInt32(1), UInt32(2)].compactMap { element in
+            volume(for: device.id, element: element)
+        }
+
+        return channelVolumes.max()
+    }
+
+    private func volume(for deviceID: AudioDeviceID, element: AudioObjectPropertyElement) -> Float32? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: element
+        )
+
+        guard AudioObjectHasProperty(deviceID, &address) else {
+            return nil
+        }
+
+        var dataSize = UInt32(MemoryLayout<Float32>.size)
+        var value: Float32 = 0
+        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &value)
+
+        guard status == noErr else {
+            logger.error("Failed to read volume for device \(deviceID), element \(element). status=\(status)")
+            return nil
+        }
+
+        return value
     }
 
     private func setVolume(_ volume: Float32, for deviceID: AudioDeviceID, element: AudioObjectPropertyElement) -> Bool {

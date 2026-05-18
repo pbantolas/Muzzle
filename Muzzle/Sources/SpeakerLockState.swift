@@ -8,7 +8,7 @@ import OSLog
 final class SpeakerLockState {
     private let logger = Logger(subsystem: "Muzzle", category: "SpeakerLock")
     private let defaults: UserDefaults
-    private let audioOutputController = AudioOutputController()
+    private let audioOutputController: AudioOutputControlling
     private let systemWakeObserver = SystemWakeObserver()
     private let notificationController: ProtectionNotifying
     private let loginItemController: LoginItemControlling
@@ -54,11 +54,13 @@ final class SpeakerLockState {
     init(
         defaults: UserDefaults = .standard,
         startObservers: Bool = true,
+        audioOutputController: AudioOutputControlling? = nil,
         notificationController: ProtectionNotifying? = nil,
         loginItemController: LoginItemControlling? = nil,
         applyLoginItemPreference: Bool? = nil
     ) {
         self.defaults = defaults
+        self.audioOutputController = audioOutputController ?? AudioOutputController()
         self.notificationController = notificationController ?? ProtectionNotificationController()
         self.loginItemController = loginItemController ?? LoginItemController()
         let shouldApplyLoginItemPreference = applyLoginItemPreference ?? startObservers
@@ -84,13 +86,13 @@ final class SpeakerLockState {
             return
         }
 
-        audioOutputController.onDefaultOutputChanged = { [weak self] output in
+        self.audioOutputController.onDefaultOutputChanged = { [weak self] output in
             self?.handleDefaultOutputChanged(output)
         }
         systemWakeObserver.onWake = { [weak self] in
             self?.handleWake()
         }
-        audioOutputController.startObservingDefaultOutput()
+        self.audioOutputController.startObservingDefaultOutput()
         systemWakeObserver.startObserving()
         applyStartAtLoginPreference()
         refreshCurrentOutput()
@@ -412,19 +414,28 @@ final class SpeakerLockState {
 
     private func blockSpeakers(_ output: AudioOutputDevice, reason: ProtectionReason) {
         lastProtectionReason = reason
+        let shouldNotify = audioOutputController.hasPotentiallyAudibleOutput(output)
         appendProtectionEvent("blocking speakers: reason=\(reason.rawValue), output=\(output.name)")
 
         if audioOutputController.setMuted(true, for: output) {
             lastAudioActionMessage = "Muted \(output.name)"
             appendProtectionEvent("block succeeded by mute: \(output.name)")
-            notificationController.notifySpeakersBlocked(reason: reason)
+            if shouldNotify {
+                notificationController.notifySpeakersBlocked(reason: reason)
+            } else {
+                appendProtectionEvent("notification skipped: output already blocked")
+            }
             return
         }
 
         if audioOutputController.setVolume(0, for: output) {
             lastAudioActionMessage = "Set \(output.name) volume to 0"
             appendProtectionEvent("block succeeded by volume 0: \(output.name)")
-            notificationController.notifySpeakersBlocked(reason: reason)
+            if shouldNotify {
+                notificationController.notifySpeakersBlocked(reason: reason)
+            } else {
+                appendProtectionEvent("notification skipped: output already blocked")
+            }
             return
         }
 
